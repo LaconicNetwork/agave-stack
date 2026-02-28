@@ -3,8 +3,9 @@ services:
     restart: unless-stopped
     image: laconicnetwork/agave:local
     network_mode: host
-    security_opt:
-      - seccomp=unconfined
+    privileged: true
+    cap_add:
+      - IPC_LOCK
     environment:
       AGAVE_MODE: validator
       VALIDATOR_ENTRYPOINT: ${VALIDATOR_ENTRYPOINT}
@@ -37,6 +38,9 @@ services:
       - validator-accounts:/data/accounts
       - validator-snapshots:/data/snapshots
     ulimits:
+      memlock:
+        soft: -1
+        hard: -1
       nofile:
         soft: 1000000
         hard: 1000000
