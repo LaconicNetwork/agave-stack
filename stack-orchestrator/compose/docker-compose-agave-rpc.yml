@@ -1,0 +1,54 @@
+services:
+  agave-rpc:
+    restart: unless-stopped
+    image: laconicnetwork/agave:local
+    network_mode: host
+    security_opt:
+      - seccomp=unconfined
+    environment:
+      AGAVE_MODE: rpc
+      VALIDATOR_ENTRYPOINT: ${VALIDATOR_ENTRYPOINT}
+      KNOWN_VALIDATOR: ${KNOWN_VALIDATOR}
+      EXTRA_ENTRYPOINTS: ${EXTRA_ENTRYPOINTS:-}
+      EXTRA_KNOWN_VALIDATORS: ${EXTRA_KNOWN_VALIDATORS:-}
+      RPC_PORT: ${RPC_PORT:-8899}
+      RPC_BIND_ADDRESS: ${RPC_BIND_ADDRESS:-127.0.0.1}
+      GOSSIP_PORT: ${GOSSIP_PORT:-8001}
+      DYNAMIC_PORT_RANGE: ${DYNAMIC_PORT_RANGE:-8000-10000}
+      EXPECTED_GENESIS_HASH: ${EXPECTED_GENESIS_HASH:-}
+      EXPECTED_SHRED_VERSION: ${EXPECTED_SHRED_VERSION:-}
+      LIMIT_LEDGER_SIZE: ${LIMIT_LEDGER_SIZE:-50000000}
+      SNAPSHOT_INTERVAL_SLOTS: ${SNAPSHOT_INTERVAL_SLOTS:-1000}
+      MAXIMUM_SNAPSHOTS_TO_RETAIN: ${MAXIMUM_SNAPSHOTS_TO_RETAIN:-5}
+      ACCOUNT_INDEXES: ${ACCOUNT_INDEXES:-program-id,spl-token-owner,spl-token-mint}
+      PUBLIC_RPC_ADDRESS: ${PUBLIC_RPC_ADDRESS:-}
+      RUST_LOG: ${RUST_LOG:-info}
+      SOLANA_METRICS_CONFIG: ${SOLANA_METRICS_CONFIG:-}
+      JITO_ENABLE: ${JITO_ENABLE:-false}
+      JITO_BLOCK_ENGINE_URL: ${JITO_BLOCK_ENGINE_URL:-}
+      JITO_SHRED_RECEIVER_ADDR: ${JITO_SHRED_RECEIVER_ADDR:-}
+      JITO_TIP_PAYMENT_PROGRAM: ${JITO_TIP_PAYMENT_PROGRAM:-}
+      JITO_DISTRIBUTION_PROGRAM: ${JITO_DISTRIBUTION_PROGRAM:-}
+      JITO_MERKLE_ROOT_AUTHORITY: ${JITO_MERKLE_ROOT_AUTHORITY:-}
+      JITO_COMMISSION_BPS: ${JITO_COMMISSION_BPS:-0}
+    volumes:
+      - rpc-config:/data/config
+      - rpc-ledger:/data/ledger
+      - rpc-accounts:/data/accounts
+      - rpc-snapshots:/data/snapshots
+    ulimits:
+      nofile:
+        soft: 1000000
+        hard: 1000000
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8899/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  rpc-config:
+  rpc-ledger:
+  rpc-accounts:
+  rpc-snapshots:
