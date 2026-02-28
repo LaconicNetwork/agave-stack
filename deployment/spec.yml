@@ -1,0 +1,73 @@
+# Biscayne Solana Validator deployment spec
+# Host: biscayne.vaasl.io (186.233.184.235)
+# Identity: 4WeLUxfQghbhsLEuwaAzjZiHg2VBw87vqHc4iZrGvKPr
+stack: stack-orchestrator/stacks/agave
+deploy-to: k8s-kind
+network:
+  ports:
+    agave-validator:
+      - '8899'
+      - '8900'
+      - '8001'
+      - 8001/udp
+      - 8002/udp
+      - 8003/udp
+      - 8004/udp
+      - 8005/udp
+      - 8006/udp
+      - 8007/udp
+      - 8008/udp
+      - 8009/udp
+      - 8010/udp
+      - 8011/udp
+      - 8012/udp
+      - 8013/udp
+      - 8014/udp
+      - 8015/udp
+      - 8016/udp
+      - 8017/udp
+      - 8018/udp
+      - 8019/udp
+      - 8020/udp
+security:
+  privileged: true
+  unlimited-memlock: true
+  capabilities:
+    - IPC_LOCK
+volumes:
+  validator-config: ./data/validator-config
+  validator-ledger: ./data/validator-ledger
+  validator-accounts: ./data/validator-accounts
+  validator-snapshots: ./data/validator-snapshots
+  doublezero-config: ./data/doublezero-config
+config:
+  # Mode: 'validator' (voting) or 'rpc' (non-voting)
+  AGAVE_MODE: validator
+  # Mainnet entrypoints
+  VALIDATOR_ENTRYPOINT: entrypoint.mainnet-beta.solana.com:8001
+  EXTRA_ENTRYPOINTS: entrypoint2.mainnet-beta.solana.com:8001 entrypoint3.mainnet-beta.solana.com:8001
+  # Known validators (Solana Foundation, Everstake, Chorus One)
+  KNOWN_VALIDATOR: 7Np41oeYqPefeNQEHSv1UDhYrehxin3NStELsSKCT4K2
+  EXTRA_KNOWN_VALIDATORS: GdnSyH3YtwcxFvQrVVJMm1JhTS4QVX7MFsX56uJLUfiZ dDzy5SR3AXdYWVqbDEkVFdvSPCtS9ihF5kJkHCtXoFs
+  # Network
+  RPC_PORT: '8899'
+  RPC_BIND_ADDRESS: 127.0.0.1
+  GOSSIP_PORT: '8001'
+  DYNAMIC_PORT_RANGE: 8002-8020
+  # Cluster verification
+  EXPECTED_GENESIS_HASH: 5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d
+  # Storage
+  LIMIT_LEDGER_SIZE: '50000000'
+  SNAPSHOT_INTERVAL_SLOTS: '1000'
+  MAXIMUM_SNAPSHOTS_TO_RETAIN: '5'
+  RUST_LOG: info
+  # Jito MEV (NY region shred receiver)
+  JITO_ENABLE: 'true'
+  JITO_BLOCK_ENGINE_URL: https://mainnet.block-engine.jito.wtf
+  JITO_SHRED_RECEIVER_ADDR: 141.98.216.96:1002
+  JITO_TIP_PAYMENT_PROGRAM: T1pyyaTNZsKv2WcRAB8oVnk93mLJw2XzjtVYqCsaHqt
+  JITO_DISTRIBUTION_PROGRAM: 4R3gSG8BpU4t19KYj8CfnbtRpnT8gtk4dvTHxVRwc2r7
+  JITO_MERKLE_ROOT_AUTHORITY: 8F4jGUmxF36vQ6yabnsxX6AQVXdKBhs8kGSUuRKSg8Xt
+  JITO_COMMISSION_BPS: '800'
+  # DoubleZero
+  DOUBLEZERO_RPC_ENDPOINT: http://127.0.0.1:8899
