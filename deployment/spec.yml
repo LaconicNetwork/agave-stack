@@ -51,9 +51,9 @@ security:
     - IPC_LOCK
 volumes:
   # Config volumes — on ZFS dataset (backed up via snapshots)
-  validator-config: ./data/validator-config
-  doublezero-validator-identity: ./data/validator-config
-  doublezero-config: ./data/doublezero-config
+  validator-config: /srv/deployments/agave/data/validator-config
+  doublezero-validator-identity: /srv/deployments/agave/data/validator-config
+  doublezero-config: /srv/deployments/agave/data/doublezero-config
   # Heavy data volumes — on zvol/ramdisk (not backed up, rebuildable)
   validator-ledger: /srv/solana/ledger
   validator-accounts: /srv/solana/ramdisk/accounts
