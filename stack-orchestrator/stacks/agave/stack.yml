@@ -6,6 +6,4 @@ containers:
   - laconicnetwork/doublezero
 pods:
   - agave
-  - agave-rpc
-  - agave-test
   - doublezero

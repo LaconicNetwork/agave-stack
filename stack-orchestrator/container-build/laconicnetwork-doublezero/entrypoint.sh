@@ -6,12 +6,15 @@ set -euo pipefail
 #
 # Optional environment:
 #   DOUBLEZERO_RPC_ENDPOINT - Solana RPC endpoint (default: http://127.0.0.1:8899)
-#   DOUBLEZERO_ENV          - DoubleZero environment (default: mainnet)
+#   DOUBLEZERO_ENV          - DoubleZero environment (default: mainnet-beta)
 #   DOUBLEZERO_EXTRA_ARGS   - additional doublezerod arguments
 # -----------------------------------------------------------------------
 
 RPC_ENDPOINT="${DOUBLEZERO_RPC_ENDPOINT:-http://127.0.0.1:8899}"
-DZ_ENV="${DOUBLEZERO_ENV:-mainnet}"
+DZ_ENV="${DOUBLEZERO_ENV:-mainnet-beta}"
+
+# Ensure state directories exist
+mkdir -p /var/lib/doublezerod /var/run/doublezerod
 
 # Generate DZ identity if not already present
 DZ_CONFIG_DIR="${HOME}/.config/doublezero"

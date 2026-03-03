@@ -2,6 +2,7 @@ services:
   agave-rpc:
     restart: unless-stopped
     image: laconicnetwork/agave:local
+    network_mode: host
     privileged: true
     cap_add:
       - IPC_LOCK

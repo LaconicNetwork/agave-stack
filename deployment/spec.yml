@@ -4,6 +4,14 @@
 stack: /srv/deployments/agave-stack/stack-orchestrator/stacks/agave
 deploy-to: k8s-kind
 network:
+  http-proxy:
+    - host-name: biscayne.vaasl.io
+      routes:
+        - path: /
+          proxy-to: agave-validator:8899
+        - path: /
+          proxy-to: agave-validator:8900
+          websocket: true
   ports:
     agave-validator:
       - '8899'
