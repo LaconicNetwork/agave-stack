@@ -2,18 +2,17 @@ services:
   doublezerod:
     restart: unless-stopped
     image: laconicnetwork/doublezero:local
-    network_mode: host
     privileged: true
     cap_add:
       - NET_ADMIN
     environment:
-      VALIDATOR_IDENTITY_PATH: ${VALIDATOR_IDENTITY_PATH:-/data/config/validator-identity.json}
       DOUBLEZERO_RPC_ENDPOINT: ${DOUBLEZERO_RPC_ENDPOINT:-http://127.0.0.1:8899}
+      DOUBLEZERO_ENV: ${DOUBLEZERO_ENV:-mainnet}
       DOUBLEZERO_EXTRA_ARGS: ${DOUBLEZERO_EXTRA_ARGS:-}
     volumes:
-      - validator-config:/data/config:ro
+      - doublezero-validator-identity:/data/config:ro
       - doublezero-config:/root/.config/doublezero
 
 volumes:
-  validator-config:
+  doublezero-validator-identity:
   doublezero-config:
