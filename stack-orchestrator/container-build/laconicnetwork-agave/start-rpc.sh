@@ -37,6 +37,7 @@ CONFIG_DIR="/data/config"
 LEDGER_DIR="/data/ledger"
 ACCOUNTS_DIR="/data/accounts"
 SNAPSHOTS_DIR="/data/snapshots"
+LOG_DIR="/data/log"
 IDENTITY_FILE="${CONFIG_DIR}/validator-identity.json"
 
 : "${VALIDATOR_ENTRYPOINT:?VALIDATOR_ENTRYPOINT is required}"
@@ -56,7 +57,7 @@ echo "Entrypoint: ${VALIDATOR_ENTRYPOINT}"
 echo "Known validator: ${KNOWN_VALIDATOR}"
 
 # Create directories and fix ownership
-for dir in "$CONFIG_DIR" "$LEDGER_DIR" "$ACCOUNTS_DIR" "$SNAPSHOTS_DIR"; do
+for dir in "$CONFIG_DIR" "$LEDGER_DIR" "$ACCOUNTS_DIR" "$SNAPSHOTS_DIR" "$LOG_DIR"; do
   mkdir -p "$dir"
   sudo chown -R "$(id -u):$(id -g)" "$dir" 2>/dev/null || true
 done
@@ -77,7 +78,7 @@ ARGS=(
   --ledger "$LEDGER_DIR"
   --accounts "$ACCOUNTS_DIR"
   --snapshots "$SNAPSHOTS_DIR"
-  --log -
+  --log "$LOG_DIR/validator.log"
   --full-rpc-api
   --rpc-port "$RPC_PORT"
   --rpc-bind-address "$RPC_BIND_ADDRESS"

@@ -37,6 +37,7 @@ services:
       - validator-ledger:/data/ledger
       - validator-accounts:/data/accounts
       - validator-snapshots:/data/snapshots
+      - validator-log:/data/log
     ports:
       # RPC ports
       - "8899"
@@ -90,3 +91,4 @@ volumes:
   validator-ledger:
   validator-accounts:
   validator-snapshots:
+  validator-log:
