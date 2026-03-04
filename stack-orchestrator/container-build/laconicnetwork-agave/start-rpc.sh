@@ -92,8 +92,6 @@ ARGS=(
   --limit-ledger-size "$LIMIT_LEDGER_SIZE"
   --full-snapshot-interval-slots "$SNAPSHOT_INTERVAL_SLOTS"
   --maximum-full-snapshots-to-retain "$MAXIMUM_SNAPSHOTS_TO_RETAIN"
-  --maximum-incremental-snapshots-to-retain 2
-  --repair-validator "$KNOWN_VALIDATOR"
 )
 
 # Account indexes
@@ -124,8 +122,12 @@ else
   ARGS+=(--private-rpc --allow-private-addr --only-known-rpc)
 fi
 
-# Metrics
-[ -n "${SOLANA_METRICS_CONFIG:-}" ] && export SOLANA_METRICS_CONFIG
+# Metrics — default to co-located InfluxDB when monitoring compose is deployed
+SOLANA_METRICS_CONFIG="${SOLANA_METRICS_CONFIG:-host=http://localhost:8086,db=agave_metrics,u=admin,p=admin}"
+export SOLANA_METRICS_CONFIG
+
+# TVU proxy/relay
+[ -n "${PUBLIC_TVU_ADDRESS:-}" ] && ARGS+=(--public-tvu-address "$PUBLIC_TVU_ADDRESS")
 
 # Jito flags
 if [ "${JITO_ENABLE:-false}" = "true" ]; then
@@ -136,6 +138,13 @@ if [ "${JITO_ENABLE:-false}" = "true" ]; then
   [ -n "${JITO_COMMISSION_BPS:-}" ] && ARGS+=(--commission-bps "$JITO_COMMISSION_BPS")
   [ -n "${JITO_BLOCK_ENGINE_URL:-}" ] && ARGS+=(--block-engine-url "$JITO_BLOCK_ENGINE_URL")
   [ -n "${JITO_SHRED_RECEIVER_ADDR:-}" ] && ARGS+=(--shred-receiver-address "$JITO_SHRED_RECEIVER_ADDR")
+fi
+
+# Extra args passthrough — any agave-validator flag without an image rebuild
+# e.g. EXTRA_ARGS="--no-snapshot-fetch --accounts-db-cache-limit-mb 4096"
+if [ -n "${EXTRA_ARGS:-}" ]; then
+  read -ra EXTRA <<< "$EXTRA_ARGS"
+  ARGS+=("${EXTRA[@]}")
 fi
 
 echo "Starting agave-validator with ${#ARGS[@]} arguments"
