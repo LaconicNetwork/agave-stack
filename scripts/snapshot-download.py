@@ -194,82 +194,57 @@ def probe_rpc_snapshot(
     current_slot: int,
     max_age_slots: int,
     max_latency_ms: float,
-    local_full_slot: int,
 ) -> SnapshotSource | None:
     """Probe a single RPC node for available snapshots.
 
-    Checks /incremental-snapshot.tar.bz2 first (prefer incremental if local
-    full exists), then /snapshot.tar.bz2. Returns SnapshotSource or None.
+    Probes for full snapshot first (required), then incremental. Records all
+    available files. Which files to actually download is decided at download
+    time based on what already exists locally — not here.
+
+    Based on the discovery approach from etcusr/solana-snapshot-finder.
     """
-    inc_url: str = f"http://{rpc_address}/incremental-snapshot.tar.bz2"
     full_url: str = f"http://{rpc_address}/snapshot.tar.bz2"
 
-    # Try incremental first
-    inc_location, inc_latency = head_no_follow(inc_url, timeout=2)
-    if inc_location:
-        latency_ms: float = inc_latency * 1000
-        if latency_ms > max_latency_ms:
-            return None
+    # Full snapshot is required — every source must have one
+    full_location, full_latency = head_no_follow(full_url, timeout=2)
+    if not full_location:
+        return None
 
+    latency_ms: float = full_latency * 1000
+    if latency_ms > max_latency_ms:
+        return None
+
+    full_filename, full_path = _parse_snapshot_filename(full_location)
+    fm: re.Match[str] | None = FULL_SNAP_RE.match(full_filename)
+    if not fm:
+        return None
+
+    full_snap_slot: int = int(fm.group(1))
+    slots_diff: int = current_slot - full_snap_slot
+
+    if slots_diff > max_age_slots or slots_diff < -100:
+        return None
+
+    file_paths: list[str] = [full_path]
+
+    # Also check for incremental snapshot
+    inc_url: str = f"http://{rpc_address}/incremental-snapshot.tar.bz2"
+    inc_location, _ = head_no_follow(inc_url, timeout=2)
+    if inc_location:
         inc_filename, inc_path = _parse_snapshot_filename(inc_location)
         m: re.Match[str] | None = INCR_SNAP_RE.match(inc_filename)
-        if not m:
-            return None
+        if m:
+            inc_base_slot: int = int(m.group(1))
+            # Incremental must be based on this source's full snapshot
+            if inc_base_slot == full_snap_slot:
+                file_paths.append(inc_path)
 
-        inc_base_slot: int = int(m.group(1))
-        inc_snap_slot: int = int(m.group(2))
-        slots_diff: int = current_slot - inc_snap_slot
-
-        if slots_diff > max_age_slots or slots_diff < -100:
-            return None
-
-        # If we have a matching local full snapshot, only need incremental
-        if local_full_slot == inc_base_slot:
-            return SnapshotSource(
-                rpc_address=rpc_address,
-                file_paths=[inc_path],
-                slots_diff=slots_diff,
-                latency_ms=latency_ms,
-            )
-
-        # Otherwise need both full + incremental
-        full_location, _ = head_no_follow(full_url, timeout=2)
-        if full_location:
-            full_filename, full_path = _parse_snapshot_filename(full_location)
-            if FULL_SNAP_RE.match(full_filename):
-                return SnapshotSource(
-                    rpc_address=rpc_address,
-                    file_paths=[full_path, inc_path],
-                    slots_diff=slots_diff,
-                    latency_ms=latency_ms,
-                )
-
-    # Try full snapshot only
-    full_location, full_latency = head_no_follow(full_url, timeout=2)
-    if full_location:
-        latency_ms = full_latency * 1000
-        if latency_ms > max_latency_ms:
-            return None
-
-        full_filename, full_path = _parse_snapshot_filename(full_location)
-        fm: re.Match[str] | None = FULL_SNAP_RE.match(full_filename)
-        if not fm:
-            return None
-
-        full_snap_slot: int = int(fm.group(1))
-        slots_diff = current_slot - full_snap_slot
-
-        if slots_diff > max_age_slots or slots_diff < -100:
-            return None
-
-        return SnapshotSource(
-            rpc_address=rpc_address,
-            file_paths=[full_path],
-            slots_diff=slots_diff,
-            latency_ms=latency_ms,
-        )
-
-    return None
+    return SnapshotSource(
+        rpc_address=rpc_address,
+        file_paths=file_paths,
+        slots_diff=slots_diff,
+        latency_ms=latency_ms,
+    )
 
 
 def discover_sources(
@@ -278,7 +253,6 @@ def discover_sources(
     max_age_slots: int,
     max_latency_ms: float,
     threads: int,
-    local_full_slot: int,
     version_filter: str | None,
 ) -> list[SnapshotSource]:
     """Discover all snapshot sources from the cluster."""
@@ -294,7 +268,7 @@ def discover_sources(
         futures: dict[concurrent.futures.Future[SnapshotSource | None], str] = {
             pool.submit(
                 probe_rpc_snapshot, addr, current_slot,
-                max_age_slots, max_latency_ms, local_full_slot,
+                max_age_slots, max_latency_ms,
             ): addr
             for addr in rpc_nodes
         }
@@ -428,8 +402,8 @@ def main() -> int:
                    help="Max snapshot age in slots (default: 1300)")
     p.add_argument("--max-latency", type=float, default=100,
                    help="Max RPC probe latency in ms (default: 100)")
-    p.add_argument("--min-download-speed", type=int, default=200,
-                   help="Min download speed in MiB/s (default: 200)")
+    p.add_argument("--min-download-speed", type=int, default=20,
+                   help="Min download speed in MiB/s (default: 20)")
     p.add_argument("--measurement-time", type=int, default=7,
                    help="Speed measurement duration in seconds (default: 7)")
     p.add_argument("--max-speed-checks", type=int, default=15,
@@ -464,27 +438,12 @@ def main() -> int:
         return 1
     log.info("Current slot: %d", current_slot)
 
-    # Check for existing local full snapshot (sort by slot number, not string)
-    local_full_slot: int = 0
-    output_path: Path = Path(args.output)
-    if output_path.exists():
-        local_fulls: list[tuple[int, Path]] = []
-        for snap_path in output_path.glob("snapshot-*tar*"):
-            m: re.Match[str] | None = FULL_SNAP_RE.match(snap_path.name)
-            if m:
-                local_fulls.append((int(m.group(1)), snap_path))
-        if local_fulls:
-            local_fulls.sort(key=lambda x: x[0], reverse=True)
-            local_full_slot = local_fulls[0][0]
-            log.info("Found local full snapshot at slot %d", local_full_slot)
-
     # Discover sources
     sources: list[SnapshotSource] = discover_sources(
         rpc_url, current_slot,
         max_age_slots=args.max_snapshot_age,
         max_latency_ms=args.max_latency,
         threads=args.threads,
-        local_full_slot=local_full_slot,
         version_filter=args.version,
     )
     if not sources:
@@ -559,19 +518,23 @@ def main() -> int:
                 print(url)
         return 0
 
-    # Download
+    # Download — skip files that already exist locally
     os.makedirs(args.output, exist_ok=True)
     total_start: float = time.monotonic()
 
-    # Download full first, then incremental (full is prerequisite)
     for filename, mirror_urls in download_plan:
+        filepath: Path = Path(args.output) / filename
+        if filepath.exists() and filepath.stat().st_size > 0:
+            log.info("Skipping %s (already exists: %.1f GB)",
+                     filename, filepath.stat().st_size / (1024 ** 3))
+            continue
         if not download_aria2c(mirror_urls, args.output, filename, args.connections):
             log.error("Failed to download %s", filename)
             return 1
 
     total_elapsed: float = time.monotonic() - total_start
     log.info("All downloads complete in %.0fs", total_elapsed)
-    for filename in filenames:
+    for filename, _ in download_plan:
         fp: Path = Path(args.output) / filename
         if fp.exists():
             log.info("  %s (%.1f GB)", fp.name, fp.stat().st_size / (1024 ** 3))
