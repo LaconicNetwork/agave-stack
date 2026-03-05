@@ -347,18 +347,24 @@ def measure_speed(rpc_address: str, measure_time: int = 7) -> float:
 
 
 def download_aria2c(
-    url: str,
+    urls: list[str],
     output_dir: str,
     filename: str,
     connections: int = 16,
 ) -> bool:
-    """Download a file using aria2c with parallel connections."""
+    """Download a file using aria2c with parallel connections.
+
+    When multiple URLs are provided, aria2c treats them as mirrors of the
+    same file and distributes chunks across all of them.
+    """
+    num_mirrors: int = len(urls)
+    total_splits: int = max(connections, connections * num_mirrors)
     cmd: list[str] = [
         "aria2c",
         "--file-allocation=none",
         "--continue=true",
         f"--max-connection-per-server={connections}",
-        f"--split={connections}",
+        f"--split={total_splits}",
         "--min-split-size=50M",
         # aria2c retries individual chunk connections on transient network
         # errors (TCP reset, timeout). This is transport-level retry analogous
@@ -373,11 +379,12 @@ def download_aria2c(
         f"--out={filename}",
         "--auto-file-renaming=false",
         "--allow-overwrite=true",
-        url,
+        *urls,
     ]
 
     log.info("Downloading %s", filename)
-    log.info("  aria2c: %d connections", connections)
+    log.info("  aria2c: %d connections × %d mirrors (%d splits)",
+             connections, num_mirrors, total_splits)
 
     start: float = time.monotonic()
     result: subprocess.CompletedProcess[bytes] = subprocess.run(cmd)
@@ -489,7 +496,7 @@ def main() -> int:
 
     # Benchmark top candidates — all speeds in MiB/s (binary, 1 MiB = 1048576 bytes)
     log.info("Benchmarking download speed on top %d sources...", args.max_speed_checks)
-    best: SnapshotSource | None = None
+    fast_sources: list[SnapshotSource] = []
     checked: int = 0
     min_speed_bytes: int = args.min_download_speed * 1024 * 1024  # MiB to bytes
 
@@ -510,32 +517,46 @@ def main() -> int:
         log.info("  %s: %.1f MiB/s (latency: %.0fms, age: %d slots)",
                  source.rpc_address, speed_mib,
                  source.latency_ms, source.slots_diff)
-        best = source
-        break
+        fast_sources.append(source)
 
-    if not best:
+    if not fast_sources:
         log.error("No source met minimum speed requirement (%d MiB/s)",
                   args.min_download_speed)
         log.info("Try: --min-download-speed 10")
         return 1
 
-    # Resolve download URLs using the full redirect paths from the server
+    # Use the fastest source as primary, collect mirrors for each file
+    best: SnapshotSource = fast_sources[0]
     file_paths: list[str] = best.file_paths
     if args.full_only:
         file_paths = [fp for fp in file_paths
                       if fp.rsplit("/", 1)[-1].startswith("snapshot-")]
 
-    urls: list[str] = [f"http://{best.rpc_address}{fp}" for fp in file_paths]
-    filenames: list[str] = [fp.rsplit("/", 1)[-1] for fp in file_paths]
+    # Build mirror URL lists: for each file, collect URLs from all fast sources
+    # that serve the same filename
+    download_plan: list[tuple[str, list[str]]] = []
+    for fp in file_paths:
+        filename: str = fp.rsplit("/", 1)[-1]
+        mirror_urls: list[str] = [f"http://{best.rpc_address}{fp}"]
+        for other in fast_sources[1:]:
+            for other_fp in other.file_paths:
+                if other_fp.rsplit("/", 1)[-1] == filename:
+                    mirror_urls.append(f"http://{other.rpc_address}{other_fp}")
+                    break
+        download_plan.append((filename, mirror_urls))
 
-    speed_mib = best.download_speed / (1024 ** 2)
-    log.info("Best source: %s (%.1f MiB/s)", best.rpc_address, speed_mib)
-    for url in urls:
-        log.info("  %s", url)
+    speed_mib: float = best.download_speed / (1024 ** 2)
+    log.info("Best source: %s (%.1f MiB/s), %d mirrors total",
+             best.rpc_address, speed_mib, len(fast_sources))
+    for filename, mirror_urls in download_plan:
+        log.info("  %s (%d mirrors)", filename, len(mirror_urls))
+        for url in mirror_urls:
+            log.info("    %s", url)
 
     if args.dry_run:
-        for url in urls:
-            print(url)
+        for _, mirror_urls in download_plan:
+            for url in mirror_urls:
+                print(url)
         return 0
 
     # Download
@@ -543,8 +564,8 @@ def main() -> int:
     total_start: float = time.monotonic()
 
     # Download full first, then incremental (full is prerequisite)
-    for url, filename in zip(urls, filenames):
-        if not download_aria2c(url, args.output, filename, args.connections):
+    for filename, mirror_urls in download_plan:
+        if not download_aria2c(mirror_urls, args.output, filename, args.connections):
             log.error("Failed to download %s", filename)
             return 1
 
