@@ -19,6 +19,11 @@ set -euo pipefail
 #   SNAPSHOT_INTERVAL_SLOTS          - full snapshot interval (default: 1000)
 #   MAXIMUM_SNAPSHOTS_TO_RETAIN      - max full snapshots (default: 5)
 #   PUBLIC_RPC_ADDRESS     - if set, advertise this as public RPC
+#   GOSSIP_HOST            - advertise this IP in ContactInfo for all sockets
+#                            (gossip, TVU, TPU, repair). Use when the validator
+#                            is behind a relay at a different IP.
+#                            Supersedes PUBLIC_TVU_ADDRESS.
+#   PUBLIC_TVU_ADDRESS     - override TVU address only (ignored if GOSSIP_HOST set)
 #   SOLANA_METRICS_CONFIG  - metrics reporting config
 #   ACCOUNT_INDEXES        - comma-separated account indexes
 #                            (default: program-id,spl-token-owner,spl-token-mint)
@@ -93,6 +98,7 @@ ARGS=(
   --limit-ledger-size "$LIMIT_LEDGER_SIZE"
   --full-snapshot-interval-slots "$SNAPSHOT_INTERVAL_SLOTS"
   --maximum-full-snapshots-to-retain "$MAXIMUM_SNAPSHOTS_TO_RETAIN"
+  --no-snapshot-fetch
 )
 
 # Account indexes
@@ -127,8 +133,12 @@ fi
 SOLANA_METRICS_CONFIG="${SOLANA_METRICS_CONFIG:-host=http://localhost:8086,db=agave_metrics,u=admin,p=admin}"
 export SOLANA_METRICS_CONFIG
 
-# TVU proxy/relay
-[ -n "${PUBLIC_TVU_ADDRESS:-}" ] && ARGS+=(--public-tvu-address "$PUBLIC_TVU_ADDRESS")
+# Gossip host — advertise a relay/proxy IP for all ContactInfo sockets
+if [ -n "${GOSSIP_HOST:-}" ]; then
+  ARGS+=(--gossip-host "$GOSSIP_HOST")
+elif [ -n "${PUBLIC_TVU_ADDRESS:-}" ]; then
+  ARGS+=(--public-tvu-address "$PUBLIC_TVU_ADDRESS")
+fi
 
 # Jito flags
 if [ "${JITO_ENABLE:-false}" = "true" ]; then
