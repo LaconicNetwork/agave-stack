@@ -31,6 +31,8 @@
     snapshot_dir: /srv/solana/snapshots
     ledger_dir: /srv/solana/ledger
     accounts_dir: /srv/solana/ramdisk/accounts
+    ramdisk_mount: /srv/solana/ramdisk
+    ramdisk_device: /dev/ram0
     snapshot_script_local: "{{ playbook_dir }}/../scripts/snapshot-download.py"
     snapshot_script: /tmp/snapshot-download.py
     # Flags — non-destructive by default
@@ -71,22 +73,24 @@
         msg: "{{ snapshot_result.stdout_lines | default(['skipped']) }}"
       tags: [snapshot]
 
-    # --- Teardown ---
-    - name: Stop existing deployment
-      command: "{{ laconic_so }} deployment --dir {{ deployment_dir }} stop"
-      register: stop_result
+    # --- Teardown (namespace only, preserve kind cluster) ---
+    - name: Delete deployment namespace
+      command: >
+        kubectl delete namespace {{ k8s_namespace }} --timeout=120s
+      register: ns_delete
       failed_when: false
       tags: [teardown]
 
-    - name: Force-remove kind cluster if stop failed
-      when: stop_result.rc != 0
-      block:
-        - name: Delete kind cluster
-          command: "kind delete cluster --name {{ kind_cluster }}"
-          failed_when: false
-        - name: Force-remove kind container
-          command: "docker rm -f {{ kind_cluster }}-control-plane"
-          failed_when: false
+    - name: Wait for namespace to terminate
+      command: >
+        kubectl get namespace {{ k8s_namespace }}
+        -o jsonpath='{.status.phase}'
+      register: ns_status
+      retries: 30
+      delay: 5
+      until: ns_status.rc != 0
+      failed_when: false
+      when: ns_delete.rc == 0
       tags: [teardown]
 
     # --- Data wipe (opt-in) ---
@@ -96,8 +100,13 @@
       when: wipe_ledger | bool
       tags: [wipe]
 
-    - name: Wipe accounts data
-      shell: rm -rf {{ accounts_dir }}/*
+    - name: Wipe accounts ramdisk (umount + mkfs + mount)
+      shell: |
+        mountpoint -q {{ ramdisk_mount }} && umount {{ ramdisk_mount }} || true
+        mkfs.ext4 -q {{ ramdisk_device }}
+        mount {{ ramdisk_device }} {{ ramdisk_mount }}
+        mkdir -p {{ accounts_dir }}
+        chown solana:solana {{ ramdisk_mount }} {{ accounts_dir }}
       become: true
       when: wipe_accounts | bool
       tags: [wipe]
