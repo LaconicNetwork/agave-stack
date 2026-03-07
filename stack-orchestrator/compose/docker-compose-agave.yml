@@ -41,6 +41,14 @@ services:
       JITO_MERKLE_ROOT_AUTHORITY: ${JITO_MERKLE_ROOT_AUTHORITY:-}
       JITO_COMMISSION_BPS: ${JITO_COMMISSION_BPS:-0}
       EXTRA_ARGS: ${EXTRA_ARGS:-}
+    deploy:
+      resources:
+        reservations:
+          cpus: '4.0'
+          memory: 256000M
+        limits:
+          cpus: '32.0'
+          memory: 921600M
     volumes:
       - validator-config:/data/config
       - validator-ledger:/data/ledger
