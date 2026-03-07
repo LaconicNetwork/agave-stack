@@ -7,4 +7,3 @@ containers:
 pods:
   - agave
   - doublezero
-  - monitoring
