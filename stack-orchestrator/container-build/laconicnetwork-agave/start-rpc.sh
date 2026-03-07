@@ -16,7 +16,7 @@ set -euo pipefail
 #   EXPECTED_GENESIS_HASH  - genesis hash for cluster verification
 #   EXPECTED_SHRED_VERSION - shred version for cluster verification
 #   LIMIT_LEDGER_SIZE      - max ledger slots to retain (default: 50000000)
-#   SNAPSHOT_INTERVAL_SLOTS          - full snapshot interval (default: 1000)
+#   SNAPSHOT_INTERVAL_SLOTS          - full snapshot interval (default: 100000)
 #   MAXIMUM_SNAPSHOTS_TO_RETAIN      - max full snapshots (default: 5)
 #   PUBLIC_RPC_ADDRESS     - if set, advertise this as public RPC
 #   GOSSIP_HOST            - advertise this IP in ContactInfo for all sockets
@@ -25,8 +25,8 @@ set -euo pipefail
 #                            Supersedes PUBLIC_TVU_ADDRESS.
 #   PUBLIC_TVU_ADDRESS     - override TVU address only (ignored if GOSSIP_HOST set)
 #   SOLANA_METRICS_CONFIG  - metrics reporting config
-#   ACCOUNT_INDEXES        - comma-separated account indexes
-#                            (default: program-id,spl-token-owner,spl-token-mint)
+#   ACCOUNT_INDEXES        - comma-separated account indexes (default: none)
+#   NO_SNAPSHOTS           - set to 'true' to disable all snapshot generation
 #
 #   Jito (set JITO_ENABLE=true to activate):
 #   JITO_BLOCK_ENGINE_URL, JITO_SHRED_RECEIVER_ADDR,
@@ -53,9 +53,10 @@ RPC_BIND_ADDRESS="${RPC_BIND_ADDRESS:-127.0.0.1}"
 GOSSIP_PORT="${GOSSIP_PORT:-8001}"
 DYNAMIC_PORT_RANGE="${DYNAMIC_PORT_RANGE:-8000-10000}"
 LIMIT_LEDGER_SIZE="${LIMIT_LEDGER_SIZE:-50000000}"
-SNAPSHOT_INTERVAL_SLOTS="${SNAPSHOT_INTERVAL_SLOTS:-1000}"
+NO_SNAPSHOTS="${NO_SNAPSHOTS:-false}"
+SNAPSHOT_INTERVAL_SLOTS="${SNAPSHOT_INTERVAL_SLOTS:-100000}"
 MAXIMUM_SNAPSHOTS_TO_RETAIN="${MAXIMUM_SNAPSHOTS_TO_RETAIN:-5}"
-ACCOUNT_INDEXES="${ACCOUNT_INDEXES:-program-id,spl-token-owner,spl-token-mint}"
+ACCOUNT_INDEXES="${ACCOUNT_INDEXES:-}"
 
 echo "Starting Agave RPC node (non-voting)..."
 echo "Entrypoint: ${VALIDATOR_ENTRYPOINT}"
@@ -96,10 +97,16 @@ ARGS=(
   --no-os-network-limits-test
   --wal-recovery-mode skip_any_corrupted_record
   --limit-ledger-size "$LIMIT_LEDGER_SIZE"
-  --full-snapshot-interval-slots "$SNAPSHOT_INTERVAL_SLOTS"
-  --maximum-full-snapshots-to-retain "$MAXIMUM_SNAPSHOTS_TO_RETAIN"
   --no-snapshot-fetch
 )
+
+# Snapshot generation
+if [ "$NO_SNAPSHOTS" = "true" ]; then
+  ARGS+=(--no-snapshots)
+else
+  ARGS+=(--full-snapshot-interval-slots "$SNAPSHOT_INTERVAL_SLOTS")
+  ARGS+=(--maximum-full-snapshots-to-retain "$MAXIMUM_SNAPSHOTS_TO_RETAIN")
+fi
 
 # Account indexes
 IFS=',' read -ra INDEX_ARRAY <<< "$ACCOUNT_INDEXES"
