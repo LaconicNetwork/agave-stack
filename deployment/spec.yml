@@ -69,6 +69,7 @@ volumes:
   validator-log: /srv/kind/solana/log
   # Monitoring
   monitoring-influxdb-data: /srv/kind/solana/monitoring/influxdb
+  monitoring-grafana-data: /srv/kind/solana/monitoring/grafana
 configmaps:
   monitoring-telegraf-config: config/monitoring/telegraf-config
   monitoring-telegraf-scripts: config/monitoring/scripts
