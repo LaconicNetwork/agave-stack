@@ -99,9 +99,9 @@ config:
   MAXIMUM_SNAPSHOTS_TO_RETAIN: '5'
   NO_INCREMENTAL_SNAPSHOTS: 'true'
   RUST_LOG: info,solana_metrics=warn
-  SOLANA_METRICS_CONFIG: host=http://172.20.0.1:8086,db=agave_metrics,u=admin,p=admin
-  # Jito MEV (NY region shred receiver)
-  JITO_ENABLE: 'true'
+  SOLANA_METRICS_CONFIG: host=http://localhost:8086,db=agave_metrics,u=admin,p=admin
+  # Jito MEV (NY region shred receiver) — disabled until voting enabled
+  JITO_ENABLE: 'false'
   JITO_BLOCK_ENGINE_URL: https://mainnet.block-engine.jito.wtf
   JITO_SHRED_RECEIVER_ADDR: 141.98.216.96:1002
   JITO_TIP_PAYMENT_PROGRAM: T1pyyaTNZsKv2WcRAB8oVnk93mLJw2XzjtVYqCsaHqt
