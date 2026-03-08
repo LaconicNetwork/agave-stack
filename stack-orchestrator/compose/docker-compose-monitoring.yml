@@ -20,8 +20,10 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_SECURITY_ADMIN_USER: admin
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_PATHS_DATA: /tmp/grafana
     volumes:
-      - monitoring-grafana-data:/var/lib/grafana
+      - monitoring-grafana-datasources:/etc/grafana/provisioning/datasources:ro
+      - monitoring-grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
     ports:
       - "3000"
 
@@ -33,7 +35,13 @@ services:
       NODE_RPC_URL: ${NODE_RPC_URL:-http://localhost:8899}
       CANONICAL_RPC_URL: ${CANONICAL_RPC_URL:-https://api.mainnet-beta.solana.com}
       INFLUXDB_URL: ${INFLUXDB_URL:-http://localhost:8086}
+    volumes:
+      - monitoring-telegraf-config:/etc/telegraf:ro
+      - monitoring-telegraf-scripts:/scripts:ro
 
 volumes:
   monitoring-influxdb-data:
-  monitoring-grafana-data:
+  monitoring-grafana-datasources:
+  monitoring-grafana-dashboards:
+  monitoring-telegraf-config:
+  monitoring-telegraf-scripts:
