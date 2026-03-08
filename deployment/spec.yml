@@ -68,6 +68,13 @@ volumes:
   validator-accounts: /srv/kind/solana/ramdisk/accounts
   validator-snapshots: /srv/kind/solana/snapshots
   validator-log: /srv/kind/solana/log
+  # Monitoring
+  monitoring-influxdb-data: /srv/kind/solana/monitoring/influxdb
+configmaps:
+  monitoring-telegraf-config: config/monitoring/telegraf-config
+  monitoring-telegraf-scripts: config/monitoring/scripts
+  monitoring-grafana-datasources: config/monitoring/grafana-datasources
+  monitoring-grafana-dashboards: config/monitoring/grafana-dashboards
 config:
   # Mode: 'rpc' (non-voting) — matches current biscayne systemd config
   AGAVE_MODE: rpc
