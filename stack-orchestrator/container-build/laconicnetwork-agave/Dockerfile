@@ -50,6 +50,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libudev1 \
     curl \
     sudo \
+    aria2 \
+    python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user with sudo
@@ -59,9 +61,10 @@ RUN useradd -m -s /bin/bash agave \
 # Copy all compiled binaries
 COPY --from=builder /solana-release/bin/ /usr/local/bin/
 
-# Copy entrypoint and mode scripts
-COPY entrypoint.sh start-validator.sh start-rpc.sh start-test.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/*.sh
+# Copy entrypoint and support scripts
+COPY entrypoint.py snapshot_download.py /usr/local/bin/
+COPY start-test.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.py /usr/local/bin/start-test.sh
 
 # Create data directories
 RUN mkdir -p /data/config /data/ledger /data/accounts /data/snapshots \
@@ -75,4 +78,4 @@ ENV RUST_BACKTRACE=1
 
 EXPOSE 8899 8900 8001 8001/udp
 
-ENTRYPOINT ["entrypoint.sh"]
+ENTRYPOINT ["entrypoint.py"]

@@ -41,6 +41,10 @@ services:
       JITO_MERKLE_ROOT_AUTHORITY: ${JITO_MERKLE_ROOT_AUTHORITY:-}
       JITO_COMMISSION_BPS: ${JITO_COMMISSION_BPS:-0}
       EXTRA_ARGS: ${EXTRA_ARGS:-}
+      SNAPSHOT_AUTO_DOWNLOAD: ${SNAPSHOT_AUTO_DOWNLOAD:-true}
+      SNAPSHOT_MAX_AGE_SLOTS: ${SNAPSHOT_MAX_AGE_SLOTS:-20000}
+      PROBE_GRACE_SECONDS: ${PROBE_GRACE_SECONDS:-600}
+      PROBE_MAX_SLOT_LAG: ${PROBE_MAX_SLOT_LAG:-20000}
     deploy:
       resources:
         reservations:
@@ -97,11 +101,11 @@ services:
         soft: 1000000
         hard: 1000000
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8899/health"]
+      test: ["CMD", "entrypoint.py", "probe"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 600s
 
 volumes:
   validator-config:
