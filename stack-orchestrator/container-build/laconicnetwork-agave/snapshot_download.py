@@ -496,7 +496,7 @@ def _discover_and_benchmark(
     rpc_url: str,
     current_slot: int,
     *,
-    max_snapshot_age: int = 10000,
+    max_snapshot_age: int = 100000,
     max_latency: float = 500,
     threads: int = 500,
     min_download_speed: int = 20,
@@ -669,7 +669,7 @@ def download_incremental_for_slot(
     rpc_url: str | None = None,
     connections: int = 16,
     threads: int = 500,
-    max_snapshot_age: int = 10000,
+    max_snapshot_age: int = 100000,
     max_latency: float = 500,
     min_download_speed: int = 20,
     measurement_time: int = 7,
@@ -731,7 +731,7 @@ def download_best_snapshot(
     rpc_url: str | None = None,
     connections: int = 16,
     threads: int = 500,
-    max_snapshot_age: int = 10000,
+    max_snapshot_age: int = 100000,
     max_latency: float = 500,
     min_download_speed: int = 20,
     measurement_time: int = 7,
@@ -882,8 +882,8 @@ def main() -> int:
     p.add_argument(
         "--max-snapshot-age",
         type=int,
-        default=10000,
-        help="Max snapshot age in slots (default: 10000)",
+        default=100000,
+        help="Max snapshot age in slots (default: 100000)",
     )
     p.add_argument(
         "--max-latency",
