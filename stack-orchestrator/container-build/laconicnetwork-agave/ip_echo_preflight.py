@@ -92,7 +92,7 @@ def _listen_udp(port: int, results: dict, stop: threading.Event) -> None:
                     _data, addr = sock.recvfrom(64)
                     results[port] = ("ok", addr)
                     return
-                except socket.timeout:
+                except TimeoutError:
                     continue
         finally:
             sock.close()
@@ -134,7 +134,10 @@ def ip_echo_check(
     seen_ip, shred_version = parse_response(resp)
     log.info(
         "entrypoint %s:%d sees us as %s (shred_version=%s)",
-        entrypoint_host, entrypoint_port, seen_ip, shred_version,
+        entrypoint_host,
+        entrypoint_port,
+        seen_ip,
+        shred_version,
     )
 
     # Wait for UDP probes
@@ -173,8 +176,14 @@ def run_preflight(
 ) -> bool:
     """Run ip_echo check with retries. Returns True if all ports pass."""
     for attempt in range(1, MAX_RETRIES + 1):
-        log.info("ip_echo attempt %d/%d → %s:%d, ports %s",
-                 attempt, MAX_RETRIES, entrypoint_host, entrypoint_port, udp_ports)
+        log.info(
+            "ip_echo attempt %d/%d → %s:%d, ports %s",
+            attempt,
+            MAX_RETRIES,
+            entrypoint_host,
+            entrypoint_port,
+            udp_ports,
+        )
         try:
             seen_ip, port_ok = ip_echo_check(entrypoint_host, entrypoint_port, udp_ports)
         except Exception as exc:
@@ -187,7 +196,8 @@ def run_preflight(
             log.error(
                 "IP MISMATCH: entrypoint sees %s, expected %s (GOSSIP_HOST). "
                 "Outbound mangle/SNAT path is broken.",
-                seen_ip, expected_ip,
+                seen_ip,
+                expected_ip,
             )
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY)
@@ -202,7 +212,10 @@ def run_preflight(
 
         log.error(
             "attempt %d: unreachable %s, reachable %s, seen as %s",
-            attempt, unreachable, reachable, seen_ip,
+            attempt,
+            unreachable,
+            reachable,
+            seen_ip,
         )
         if attempt < MAX_RETRIES:
             time.sleep(RETRY_DELAY)

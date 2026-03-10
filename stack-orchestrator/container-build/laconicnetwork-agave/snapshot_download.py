@@ -45,8 +45,10 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from email.message import Message as HTTPMessage
 from http.client import HTTPResponse
 from pathlib import Path
+from typing import IO
 from urllib.request import Request
 
 log: logging.Logger = logging.getLogger("snapshot-download")
@@ -60,9 +62,7 @@ CLUSTER_RPC: dict[str, str] = {
 # Snapshot filenames:
 #   snapshot-<slot>-<hash>.tar.zst
 #   incremental-snapshot-<base_slot>-<slot>-<hash>.tar.zst
-FULL_SNAP_RE: re.Pattern[str] = re.compile(
-    r"^snapshot-(\d+)-([A-Za-z0-9]+)\.tar\.(zst|bz2)$"
-)
+FULL_SNAP_RE: re.Pattern[str] = re.compile(r"^snapshot-(\d+)-([A-Za-z0-9]+)\.tar\.(zst|bz2)$")
 INCR_SNAP_RE: re.Pattern[str] = re.compile(
     r"^incremental-snapshot-(\d+)-(\d+)-([A-Za-z0-9]+)\.tar\.(zst|bz2)$"
 )
@@ -89,24 +89,28 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(
         self,
         req: Request,
-        fp: HTTPResponse,
+        fp: IO[bytes],
         code: int,
         msg: str,
-        headers: dict[str, str],  # type: ignore[override]
+        headers: HTTPMessage,
         newurl: str,
     ) -> None:
         return None
 
 
-def rpc_post(url: str, method: str, params: list[object] | None = None,
-             timeout: int = 25) -> object | None:
+def rpc_post(
+    url: str, method: str, params: list[object] | None = None, timeout: int = 25
+) -> object | None:
     """JSON-RPC POST. Returns parsed 'result' field or None on error."""
-    payload: bytes = json.dumps({
-        "jsonrpc": "2.0", "id": 1,
-        "method": method, "params": params or [],
-    }).encode()
-    req = Request(url, data=payload,
-                  headers={"Content-Type": "application/json"})
+    payload: bytes = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": method,
+            "params": params or [],
+        }
+    ).encode()
+    req = Request(url, data=payload, headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data: dict[str, object] = json.loads(resp.read())
@@ -184,6 +188,7 @@ def _parse_snapshot_filename(location: str) -> tuple[str, str | None]:
     if location.startswith("http://") or location.startswith("https://"):
         # Absolute URL — extract path
         from urllib.parse import urlparse
+
         path: str = urlparse(location).path
     else:
         path = location
@@ -212,6 +217,8 @@ def probe_rpc_snapshot(
     latency_ms: float = full_latency * 1000
 
     full_filename, full_path = _parse_snapshot_filename(full_location)
+    if full_path is None:
+        return None
     fm: re.Match[str] | None = FULL_SNAP_RE.match(full_filename)
     if not fm:
         return None
@@ -227,7 +234,7 @@ def probe_rpc_snapshot(
     if inc_location:
         inc_filename, inc_path = _parse_snapshot_filename(inc_location)
         m: re.Match[str] | None = INCR_SNAP_RE.match(inc_filename)
-        if m:
+        if m and inc_path is not None:
             inc_base_slot: int = int(m.group(1))
             # Incremental must be based on this source's full snapshot
             if inc_base_slot == full_snap_slot:
@@ -264,15 +271,18 @@ def discover_sources(
     all_sources: list[SnapshotSource] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as pool:
         futures: dict[concurrent.futures.Future[SnapshotSource | None], str] = {
-            pool.submit(probe_rpc_snapshot, addr, current_slot): addr
-            for addr in rpc_nodes
+            pool.submit(probe_rpc_snapshot, addr, current_slot): addr for addr in rpc_nodes
         }
         done: int = 0
         for future in concurrent.futures.as_completed(futures):
             done += 1
             if done % 200 == 0:
-                log.info("  probed %d/%d nodes, %d reachable",
-                         done, len(rpc_nodes), len(all_sources))
+                log.info(
+                    "  probed %d/%d nodes, %d reachable",
+                    done,
+                    len(rpc_nodes),
+                    len(all_sources),
+                )
             try:
                 result: SnapshotSource | None = future.result()
             except (urllib.error.URLError, OSError, TimeoutError) as e:
@@ -297,20 +307,29 @@ def discover_sources(
         filtered.append(src)
 
     if rejected_age or rejected_latency:
-        log.info("Filtered: %d rejected by age (>%d slots), %d by latency (>%.0fms)",
-                 rejected_age, max_age_slots, rejected_latency, max_latency_ms)
+        log.info(
+            "Filtered: %d rejected by age (>%d slots), %d by latency (>%.0fms)",
+            rejected_age,
+            max_age_slots,
+            rejected_latency,
+            max_latency_ms,
+        )
 
     if not filtered and all_sources:
         # Show what was available so the user can adjust filters
         all_sources.sort(key=lambda s: s.slots_diff)
         best = all_sources[0]
-        log.warning("All %d sources rejected by filters. Best available: "
-                     "%s (age=%d slots, latency=%.0fms). "
-                     "Try --max-snapshot-age %d --max-latency %.0f",
-                     len(all_sources), best.rpc_address,
-                     best.slots_diff, best.latency_ms,
-                     best.slots_diff + 500,
-                     max(best.latency_ms * 1.5, 500))
+        log.warning(
+            "All %d sources rejected by filters. Best available: "
+            "%s (age=%d slots, latency=%.0fms). "
+            "Try --max-snapshot-age %d --max-latency %.0f",
+            len(all_sources),
+            best.rpc_address,
+            best.slots_diff,
+            best.latency_ms,
+            best.slots_diff + 500,
+            max(best.latency_ms * 1.5, 500),
+        )
 
     log.info("Found %d sources after filtering", len(filtered))
     return filtered
@@ -370,8 +389,12 @@ def probe_incremental(
         if not m:
             continue
         if int(m.group(1)) != full_snap_slot:
-            log.debug("  %s: incremental base slot %s != full %d, skipping",
-                      source.rpc_address, m.group(1), full_snap_slot)
+            log.debug(
+                "  %s: incremental base slot %s != full %d, skipping",
+                source.rpc_address,
+                m.group(1),
+                full_snap_slot,
+            )
             continue
         inc_slot: int = int(m.group(2))
         if inc_slot > best_slot:
@@ -389,7 +412,8 @@ def probe_incremental(
         if other.rpc_address == best_source.rpc_address:
             continue
         other_loc, _ = head_no_follow(
-            f"http://{other.rpc_address}/incremental-snapshot.tar.bz2", timeout=2)
+            f"http://{other.rpc_address}/incremental-snapshot.tar.bz2", timeout=2
+        )
         if other_loc:
             other_fn, other_fp = _parse_snapshot_filename(other_loc)
             if other_fn == best_filename:
@@ -438,8 +462,12 @@ def download_aria2c(
     ]
 
     log.info("Downloading %s", filename)
-    log.info("  aria2c: %d connections x %d mirrors (%d splits)",
-             connections, num_mirrors, total_splits)
+    log.info(
+        "  aria2c: %d connections x %d mirrors (%d splits)",
+        connections,
+        num_mirrors,
+        total_splits,
+    )
 
     start: float = time.monotonic()
     result: subprocess.CompletedProcess[bytes] = subprocess.run(cmd)
@@ -455,8 +483,8 @@ def download_aria2c(
         return False
 
     size_bytes: int = filepath.stat().st_size
-    size_gb: float = size_bytes / (1024 ** 3)
-    avg_mb: float = size_bytes / elapsed / (1024 ** 2) if elapsed > 0 else 0
+    size_gb: float = size_bytes / (1024**3)
+    avg_mb: float = size_bytes / elapsed / (1024**2) if elapsed > 0 else 0
     log.info("  Done: %.1f GB in %.0fs (%.1f MiB/s avg)", size_gb, elapsed, avg_mb)
     return True
 
@@ -481,7 +509,8 @@ def _discover_and_benchmark(
     Returns sources that meet the minimum speed requirement, sorted by speed.
     """
     sources: list[SnapshotSource] = discover_sources(
-        rpc_url, current_slot,
+        rpc_url,
+        current_slot,
         max_age_slots=max_snapshot_age,
         max_latency_ms=max_latency,
         threads=threads,
@@ -504,16 +533,24 @@ def _discover_and_benchmark(
 
         speed: float = measure_speed(source.rpc_address, measurement_time)
         source.download_speed = speed
-        speed_mib: float = speed / (1024 ** 2)
+        speed_mib: float = speed / (1024**2)
 
         if speed < min_speed_bytes:
-            log.info("  %s: %.1f MiB/s (too slow, need >=%d MiB/s)",
-                     source.rpc_address, speed_mib, min_download_speed)
+            log.info(
+                "  %s: %.1f MiB/s (too slow, need >=%d MiB/s)",
+                source.rpc_address,
+                speed_mib,
+                min_download_speed,
+            )
             continue
 
-        log.info("  %s: %.1f MiB/s (latency: %.0fms, age: %d slots)",
-                 source.rpc_address, speed_mib,
-                 source.latency_ms, source.slots_diff)
+        log.info(
+            "  %s: %.1f MiB/s (latency: %.0fms, age: %d slots)",
+            source.rpc_address,
+            speed_mib,
+            source.latency_ms,
+            source.slots_diff,
+        )
         fast_sources.append(source)
 
     return fast_sources
@@ -541,18 +578,22 @@ def _rolling_incremental_download(
     while True:
         if time.monotonic() - loop_start > max_convergence_time:
             if prev_inc_filename:
-                log.warning("Convergence timeout (%.0fs) — using %s",
-                            max_convergence_time, prev_inc_filename)
+                log.warning(
+                    "Convergence timeout (%.0fs) — using %s",
+                    max_convergence_time,
+                    prev_inc_filename,
+                )
             else:
-                log.warning("Convergence timeout (%.0fs) — no incremental downloaded",
-                            max_convergence_time)
+                log.warning(
+                    "Convergence timeout (%.0fs) — no incremental downloaded",
+                    max_convergence_time,
+                )
             break
 
         inc_fn, inc_mirrors = probe_incremental(fast_sources, full_snap_slot)
         if inc_fn is None:
             if prev_inc_filename is None:
-                log.error("No matching incremental found for base slot %d",
-                          full_snap_slot)
+                log.error("No matching incremental found for base slot %d", full_snap_slot)
             else:
                 log.info("No newer incremental available, using %s", prev_inc_filename)
             break
@@ -570,11 +611,17 @@ def _rolling_incremental_download(
 
         if inc_fn == prev_inc_filename:
             if gap <= convergence_slots:
-                log.info("Incremental %s already downloaded (gap %d slots, converged)",
-                         inc_fn, gap)
+                log.info(
+                    "Incremental %s already downloaded (gap %d slots, converged)",
+                    inc_fn,
+                    gap,
+                )
                 break
-            log.info("No newer incremental yet (slot %d, gap %d slots), waiting...",
-                     inc_slot, gap)
+            log.info(
+                "No newer incremental yet (slot %d, gap %d slots), waiting...",
+                inc_slot,
+                gap,
+            )
             time.sleep(10)
             continue
 
@@ -584,8 +631,13 @@ def _rolling_incremental_download(
                 log.info("Removing superseded incremental %s", prev_inc_filename)
                 old_path.unlink()
 
-        log.info("Downloading incremental %s (%d mirrors, slot %d, gap %d slots)",
-                 inc_fn, len(inc_mirrors), inc_slot, gap)
+        log.info(
+            "Downloading incremental %s (%d mirrors, slot %d, gap %d slots)",
+            inc_fn,
+            len(inc_mirrors),
+            inc_slot,
+            gap,
+        )
         if not download_aria2c(inc_mirrors, output_dir, inc_fn, connections):
             log.warning("Failed to download incremental %s — re-probing in 10s", inc_fn)
             time.sleep(10)
@@ -594,15 +646,13 @@ def _rolling_incremental_download(
         prev_inc_filename = inc_fn
 
         if gap <= convergence_slots:
-            log.info("Converged: incremental slot %d is %d slots behind head",
-                     inc_slot, gap)
+            log.info("Converged: incremental slot %d is %d slots behind head", inc_slot, gap)
             break
 
         if head_slot is None:
             break
 
-        log.info("Not converged (gap %d > %d), re-probing in 10s...",
-                 gap, convergence_slots)
+        log.info("Not converged (gap %d > %d), re-probing in 10s...", gap, convergence_slots)
         time.sleep(10)
 
     return prev_inc_filename
@@ -648,7 +698,8 @@ def download_incremental_for_slot(
         return False
 
     fast_sources: list[SnapshotSource] = _discover_and_benchmark(
-        resolved_rpc, current_slot,
+        resolved_rpc,
+        current_slot,
         max_snapshot_age=max_snapshot_age,
         max_latency=max_latency,
         threads=threads,
@@ -663,8 +714,12 @@ def download_incremental_for_slot(
 
     os.makedirs(output_dir, exist_ok=True)
     result: str | None = _rolling_incremental_download(
-        fast_sources, full_snap_slot, output_dir,
-        convergence_slots, connections, resolved_rpc,
+        fast_sources,
+        full_snap_slot,
+        output_dir,
+        convergence_slots,
+        connections,
+        resolved_rpc,
     )
     return result is not None
 
@@ -706,7 +761,8 @@ def download_best_snapshot(
     log.info("Current slot: %d", current_slot)
 
     fast_sources: list[SnapshotSource] = _discover_and_benchmark(
-        resolved_rpc, current_slot,
+        resolved_rpc,
+        current_slot,
         max_snapshot_age=max_snapshot_age,
         max_latency=max_latency,
         threads=threads,
@@ -721,8 +777,9 @@ def download_best_snapshot(
 
     # Use the fastest source as primary, build full snapshot download plan
     best: SnapshotSource = fast_sources[0]
-    full_paths: list[str] = [fp for fp in best.file_paths
-                             if fp.rsplit("/", 1)[-1].startswith("snapshot-")]
+    full_paths: list[str] = [
+        fp for fp in best.file_paths if fp.rsplit("/", 1)[-1].startswith("snapshot-")
+    ]
     if not full_paths:
         log.error("Best source has no full snapshot")
         return False
@@ -736,9 +793,13 @@ def download_best_snapshot(
                 full_mirrors.append(f"http://{other.rpc_address}{other_fp}")
                 break
 
-    speed_mib: float = best.download_speed / (1024 ** 2)
-    log.info("Best source: %s (%.1f MiB/s), %d mirrors",
-             best.rpc_address, speed_mib, len(full_mirrors))
+    speed_mib: float = best.download_speed / (1024**2)
+    log.info(
+        "Best source: %s (%.1f MiB/s), %d mirrors",
+        best.rpc_address,
+        speed_mib,
+        len(full_mirrors),
+    )
 
     # Download full snapshot
     os.makedirs(output_dir, exist_ok=True)
@@ -746,8 +807,11 @@ def download_best_snapshot(
 
     filepath: Path = Path(output_dir) / full_filename
     if filepath.exists() and filepath.stat().st_size > 0:
-        log.info("Skipping %s (already exists: %.1f GB)",
-                 full_filename, filepath.stat().st_size / (1024 ** 3))
+        log.info(
+            "Skipping %s (already exists: %.1f GB)",
+            full_filename,
+            filepath.stat().st_size / (1024**3),
+        )
     else:
         if not download_aria2c(full_mirrors, output_dir, full_filename, connections):
             log.error("Failed to download %s", full_filename)
@@ -761,8 +825,12 @@ def download_best_snapshot(
             full_snap_slot: int = int(fm.group(1))
             log.info("Downloading incremental for base slot %d...", full_snap_slot)
             _rolling_incremental_download(
-                fast_sources, full_snap_slot, output_dir,
-                convergence_slots, connections, resolved_rpc,
+                fast_sources,
+                full_snap_slot,
+                output_dir,
+                convergence_slots,
+                connections,
+                resolved_rpc,
             )
 
     total_elapsed: float = time.monotonic() - total_start
@@ -778,38 +846,91 @@ def main() -> int:
     p: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Download Solana snapshots with aria2c parallel downloads",
     )
-    p.add_argument("-o", "--output", default="/srv/kind/solana/snapshots",
-                   help="Snapshot output directory (default: /srv/kind/solana/snapshots)")
-    p.add_argument("-c", "--cluster", default="mainnet-beta",
-                   choices=list(CLUSTER_RPC),
-                   help="Solana cluster (default: mainnet-beta)")
-    p.add_argument("-r", "--rpc", default=None,
-                   help="RPC URL for cluster discovery (default: public RPC)")
-    p.add_argument("-n", "--connections", type=int, default=16,
-                   help="aria2c connections per download (default: 16)")
-    p.add_argument("-t", "--threads", type=int, default=500,
-                   help="Threads for parallel RPC probing (default: 500)")
-    p.add_argument("--max-snapshot-age", type=int, default=10000,
-                   help="Max snapshot age in slots (default: 10000)")
-    p.add_argument("--max-latency", type=float, default=500,
-                   help="Max RPC probe latency in ms (default: 500)")
-    p.add_argument("--min-download-speed", type=int, default=20,
-                   help="Min download speed in MiB/s (default: 20)")
-    p.add_argument("--measurement-time", type=int, default=7,
-                   help="Speed measurement duration in seconds (default: 7)")
-    p.add_argument("--max-speed-checks", type=int, default=15,
-                   help="Max nodes to benchmark before giving up (default: 15)")
-    p.add_argument("--version", default=None,
-                   help="Filter nodes by version prefix (e.g. '2.2')")
-    p.add_argument("--convergence-slots", type=int, default=500,
-                   help="Max slot gap for incremental convergence (default: 500)")
-    p.add_argument("--full-only", action="store_true",
-                   help="Download only full snapshot, skip incremental")
-    p.add_argument("--dry-run", action="store_true",
-                   help="Find best source and print URL, don't download")
-    p.add_argument("--post-cmd",
-                   help="Shell command to run after successful download "
-                        "(e.g. 'kubectl scale deployment ... --replicas=1')")
+    p.add_argument(
+        "-o",
+        "--output",
+        default="/srv/kind/solana/snapshots",
+        help="Snapshot output directory (default: /srv/kind/solana/snapshots)",
+    )
+    p.add_argument(
+        "-c",
+        "--cluster",
+        default="mainnet-beta",
+        choices=list(CLUSTER_RPC),
+        help="Solana cluster (default: mainnet-beta)",
+    )
+    p.add_argument(
+        "-r",
+        "--rpc",
+        default=None,
+        help="RPC URL for cluster discovery (default: public RPC)",
+    )
+    p.add_argument(
+        "-n",
+        "--connections",
+        type=int,
+        default=16,
+        help="aria2c connections per download (default: 16)",
+    )
+    p.add_argument(
+        "-t",
+        "--threads",
+        type=int,
+        default=500,
+        help="Threads for parallel RPC probing (default: 500)",
+    )
+    p.add_argument(
+        "--max-snapshot-age",
+        type=int,
+        default=10000,
+        help="Max snapshot age in slots (default: 10000)",
+    )
+    p.add_argument(
+        "--max-latency",
+        type=float,
+        default=500,
+        help="Max RPC probe latency in ms (default: 500)",
+    )
+    p.add_argument(
+        "--min-download-speed",
+        type=int,
+        default=20,
+        help="Min download speed in MiB/s (default: 20)",
+    )
+    p.add_argument(
+        "--measurement-time",
+        type=int,
+        default=7,
+        help="Speed measurement duration in seconds (default: 7)",
+    )
+    p.add_argument(
+        "--max-speed-checks",
+        type=int,
+        default=15,
+        help="Max nodes to benchmark before giving up (default: 15)",
+    )
+    p.add_argument("--version", default=None, help="Filter nodes by version prefix (e.g. '2.2')")
+    p.add_argument(
+        "--convergence-slots",
+        type=int,
+        default=500,
+        help="Max slot gap for incremental convergence (default: 500)",
+    )
+    p.add_argument(
+        "--full-only",
+        action="store_true",
+        help="Download only full snapshot, skip incremental",
+    )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Find best source and print URL, don't download",
+    )
+    p.add_argument(
+        "--post-cmd",
+        help="Shell command to run after successful download "
+        "(e.g. 'kubectl scale deployment ... --replicas=1')",
+    )
     p.add_argument("-v", "--verbose", action="store_true")
     args: argparse.Namespace = p.parse_args()
 
@@ -828,7 +949,8 @@ def main() -> int:
             return 1
 
         sources: list[SnapshotSource] = discover_sources(
-            rpc_url, current_slot,
+            rpc_url,
+            current_slot,
             max_age_slots=args.max_snapshot_age,
             max_latency_ms=args.max_latency,
             threads=args.threads,
@@ -863,11 +985,11 @@ def main() -> int:
     if ok and args.post_cmd:
         log.info("Running post-download command: %s", args.post_cmd)
         result: subprocess.CompletedProcess[bytes] = subprocess.run(
-            args.post_cmd, shell=True,
+            args.post_cmd,
+            shell=True,
         )
         if result.returncode != 0:
-            log.error("Post-download command failed with exit code %d",
-                      result.returncode)
+            log.error("Post-download command failed with exit code %d", result.returncode)
             return 1
         log.info("Post-download command completed successfully")
 

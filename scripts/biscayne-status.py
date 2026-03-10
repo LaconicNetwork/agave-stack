@@ -12,7 +12,6 @@ Collects and displays key health metrics:
 
 import json
 import subprocess
-import sys
 import time
 
 NAMESPACE = "laconic-laconic-70ce4c4b47e23b85"
@@ -27,7 +26,9 @@ def ssh(cmd: str, timeout: int = 10) -> str:
     try:
         r = subprocess.run(
             ["ssh", SSH, cmd],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
         )
         return r.stdout.strip() + r.stderr.strip()
     except subprocess.TimeoutExpired:
@@ -37,19 +38,26 @@ def ssh(cmd: str, timeout: int = 10) -> str:
 def local(cmd: str, timeout: int = 10) -> str:
     try:
         r = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=timeout,
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
         )
         return r.stdout.strip()
     except subprocess.TimeoutExpired:
         return "<timeout>"
 
 
-def rpc_call(method: str, url: str = LOCAL_RPC, remote: bool = True, params: list | None = None) -> dict | None:
+def rpc_call(
+    method: str, url: str = LOCAL_RPC, remote: bool = True, params: list | None = None
+) -> dict | None:
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params or []})
     cmd = f"curl -s {url} -X POST -H 'Content-Type: application/json' -d '{payload}'"
     raw = ssh(cmd) if remote else local(cmd)
     try:
-        return json.loads(raw)
+        result: dict | None = json.loads(raw)
+        return result
     except (json.JSONDecodeError, TypeError):
         return None
 
@@ -73,7 +81,7 @@ def get_health() -> str:
     behind = err.get("data", {}).get("numSlotsBehind")
     if behind is not None:
         return f"behind {behind:,} slots"
-    return msg
+    return str(msg)
 
 
 def get_pod_status() -> str:
@@ -100,7 +108,7 @@ def get_pod_status() -> str:
 def get_memory() -> str:
     cmd = (
         f"docker exec {KIND_NODE} bash -c '"
-        "find /sys/fs/cgroup -name memory.current -path \"*burstable*\" 2>/dev/null | head -1 | "
+        'find /sys/fs/cgroup -name memory.current -path "*burstable*" 2>/dev/null | head -1 | '
         "while read f; do "
         "  dir=$(dirname $f); "
         "  cur=$(cat $f); "
@@ -135,7 +143,7 @@ def get_oom_kills() -> str:
     # Get kernel uptime-relative timestamp and convert to UTC
     # dmesg timestamps are seconds since boot; combine with boot time
     raw = ssh(
-        "BOOT=$(date -d \"$(uptime -s)\" +%s); "
+        'BOOT=$(date -d "$(uptime -s)" +%s); '
         "KERN_TS=$(sudo dmesg | grep 'oom-kill' | tail -1 | "
         "  sed 's/\\[\\s*\\([0-9.]*\\)\\].*/\\1/'); "
         "echo $BOOT $KERN_TS"
@@ -146,7 +154,10 @@ def get_oom_kills() -> str:
         kern_secs = float(parts[1])
         oom_epoch = boot_epoch + int(kern_secs)
         from datetime import datetime, timezone
-        oom_utc = datetime.fromtimestamp(oom_epoch, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        oom_utc = datetime.fromtimestamp(oom_epoch, tz=timezone.utc).strftime(
+            "%Y-%m-%d %H:%M:%S UTC"
+        )
         return f"{count} total (last: {oom_utc})"
     except (IndexError, ValueError):
         return f"{count} total (timestamp parse failed)"
@@ -183,7 +194,9 @@ def get_shreds_per_sec() -> str:
 
 
 def get_unwrap_status() -> str:
-    raw = ssh("ps -p $(pgrep -f shred-unwrap | head -1) -o pid,etime,rss --no-headers 2>/dev/null || echo dead")
+    raw = ssh(
+        "ps -p $(pgrep -f shred-unwrap | head -1) -o pid,etime,rss --no-headers 2>/dev/null || echo dead"
+    )
     if "dead" in raw or not raw.strip():
         return "NOT RUNNING"
     parts = raw.split()

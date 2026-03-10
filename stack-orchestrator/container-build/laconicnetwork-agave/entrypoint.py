@@ -44,9 +44,7 @@ LOG_DIR = "/data/log"
 IDENTITY_FILE = f"{CONFIG_DIR}/validator-identity.json"
 
 # Snapshot filename patterns
-FULL_SNAP_RE: re.Pattern[str] = re.compile(
-    r"^snapshot-(\d+)-[A-Za-z0-9]+\.tar\.(zst|bz2)$"
-)
+FULL_SNAP_RE: re.Pattern[str] = re.compile(r"^snapshot-(\d+)-[A-Za-z0-9]+\.tar\.(zst|bz2)$")
 INCR_SNAP_RE: re.Pattern[str] = re.compile(
     r"^incremental-snapshot-(\d+)-(\d+)-[A-Za-z0-9]+\.tar\.(zst|bz2)$"
 )
@@ -81,12 +79,15 @@ def env_bool(name: str, default: bool = False) -> bool:
 
 def rpc_get_slot(url: str, timeout: int = 10) -> int | None:
     """Get current slot from a Solana RPC endpoint."""
-    payload = json.dumps({
-        "jsonrpc": "2.0", "id": 1,
-        "method": "getSlot", "params": [],
-    }).encode()
-    req = Request(url, data=payload,
-                  headers={"Content-Type": "application/json"})
+    payload = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getSlot",
+            "params": [],
+        }
+    ).encode()
+    req = Request(url, data=payload, headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read())
@@ -177,8 +178,7 @@ def maybe_download_snapshot(snapshots_dir: str) -> None:
 
     # Check local full snapshot
     local_slot = get_local_snapshot_slot(snapshots_dir)
-    have_fresh_full = (local_slot is not None
-                       and (mainnet_slot - local_slot) <= max_age)
+    have_fresh_full = local_slot is not None and (mainnet_slot - local_slot) <= max_age
 
     if have_fresh_full:
         assert local_slot is not None
@@ -186,20 +186,28 @@ def maybe_download_snapshot(snapshots_dir: str) -> None:
         if inc_slot is not None:
             inc_gap = mainnet_slot - inc_slot
             if inc_gap <= convergence:
-                log.info("Full (slot %d) + incremental (slot %d, gap %d) "
-                         "within convergence, starting",
-                         local_slot, inc_slot, inc_gap)
+                log.info(
+                    "Full (slot %d) + incremental (slot %d, gap %d) "
+                    "within convergence, starting",
+                    local_slot,
+                    inc_slot,
+                    inc_gap,
+                )
                 return
-            log.info("Incremental too stale (slot %d, gap %d > %d)",
-                     inc_slot, inc_gap, convergence)
+            log.info(
+                "Incremental too stale (slot %d, gap %d > %d)",
+                inc_slot,
+                inc_gap,
+                convergence,
+            )
         # Fresh full, need a fresh incremental
         log.info("Downloading incremental for full at slot %d", local_slot)
         while True:
-            if download_incremental_for_slot(snapshots_dir, local_slot,
-                                             convergence_slots=convergence):
+            if download_incremental_for_slot(
+                snapshots_dir, local_slot, convergence_slots=convergence
+            ):
                 return
-            log.warning("Incremental download failed — retrying in %ds",
-                        retry_delay)
+            log.warning("Incremental download failed — retrying in %ds", retry_delay)
             time.sleep(retry_delay)
 
     # No full or full too old — download both
@@ -224,7 +232,8 @@ def ensure_dirs(*dirs: str) -> None:
         try:
             subprocess.run(
                 ["sudo", "chown", "-R", f"{uid}:{gid}", d],
-                check=False, capture_output=True,
+                check=False,
+                capture_output=True,
             )
         except FileNotFoundError:
             pass  # sudo not available — dirs already owned correctly
@@ -236,8 +245,15 @@ def ensure_identity_rpc() -> None:
         return
     log.info("Generating RPC node identity keypair...")
     subprocess.run(
-        ["solana-keygen", "new", "--no-passphrase", "--silent",
-         "--force", "--outfile", IDENTITY_FILE],
+        [
+            "solana-keygen",
+            "new",
+            "--no-passphrase",
+            "--silent",
+            "--force",
+            "--outfile",
+            IDENTITY_FILE,
+        ],
         check=True,
     )
 
@@ -246,7 +262,9 @@ def print_identity() -> None:
     """Print the node identity pubkey."""
     result = subprocess.run(
         ["solana-keygen", "pubkey", IDENTITY_FILE],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode == 0:
         log.info("Node identity: %s", result.stdout.strip())
@@ -258,19 +276,31 @@ def print_identity() -> None:
 def build_common_args() -> list[str]:
     """Build agave-validator args common to both RPC and validator modes."""
     args: list[str] = [
-        "--identity", IDENTITY_FILE,
-        "--entrypoint", env_required("VALIDATOR_ENTRYPOINT"),
-        "--known-validator", env_required("KNOWN_VALIDATOR"),
-        "--ledger", LEDGER_DIR,
-        "--accounts", ACCOUNTS_DIR,
-        "--snapshots", SNAPSHOTS_DIR,
-        "--rpc-port", env("RPC_PORT", "8899"),
-        "--rpc-bind-address", env("RPC_BIND_ADDRESS", "127.0.0.1"),
-        "--gossip-port", env("GOSSIP_PORT", "8001"),
-        "--dynamic-port-range", env("DYNAMIC_PORT_RANGE", "9000-10000"),
+        "--identity",
+        IDENTITY_FILE,
+        "--entrypoint",
+        env_required("VALIDATOR_ENTRYPOINT"),
+        "--known-validator",
+        env_required("KNOWN_VALIDATOR"),
+        "--ledger",
+        LEDGER_DIR,
+        "--accounts",
+        ACCOUNTS_DIR,
+        "--snapshots",
+        SNAPSHOTS_DIR,
+        "--rpc-port",
+        env("RPC_PORT", "8899"),
+        "--rpc-bind-address",
+        env("RPC_BIND_ADDRESS", "127.0.0.1"),
+        "--gossip-port",
+        env("GOSSIP_PORT", "8001"),
+        "--dynamic-port-range",
+        env("DYNAMIC_PORT_RANGE", "9000-10000"),
         "--no-os-network-limits-test",
-        "--wal-recovery-mode", "skip_any_corrupted_record",
-        "--limit-ledger-size", env("LIMIT_LEDGER_SIZE", "50000000"),
+        "--wal-recovery-mode",
+        "skip_any_corrupted_record",
+        "--limit-ledger-size",
+        env("LIMIT_LEDGER_SIZE", "50000000"),
         "--no-snapshot-fetch",  # entrypoint handles snapshot download
     ]
 
@@ -279,8 +309,10 @@ def build_common_args() -> list[str]:
         args.append("--no-snapshots")
     else:
         args += [
-            "--full-snapshot-interval-slots", env("SNAPSHOT_INTERVAL_SLOTS", "100000"),
-            "--maximum-full-snapshots-to-retain", env("MAXIMUM_SNAPSHOTS_TO_RETAIN", "1"),
+            "--full-snapshot-interval-slots",
+            env("SNAPSHOT_INTERVAL_SLOTS", "100000"),
+            "--maximum-full-snapshots-to-retain",
+            env("MAXIMUM_SNAPSHOTS_TO_RETAIN", "1"),
         ]
         if env("NO_INCREMENTAL_SNAPSHOTS") != "true":
             args += ["--maximum-incremental-snapshots-to-retain", "2"]
@@ -345,7 +377,8 @@ def build_rpc_args() -> list[str]:
     args = build_common_args()
     args += [
         "--no-voting",
-        "--log", f"{LOG_DIR}/validator.log",
+        "--log",
+        f"{LOG_DIR}/validator.log",
         "--full-rpc-api",
         "--enable-rpc-transaction-history",
         "--rpc-pubsub-enable-block-subscription",
@@ -368,8 +401,7 @@ def build_rpc_args() -> list[str]:
 
 def build_validator_args() -> list[str]:
     """Build agave-validator args for voting validator mode."""
-    vote_keypair = env("VOTE_ACCOUNT_KEYPAIR",
-                       "/data/config/vote-account-keypair.json")
+    vote_keypair = env("VOTE_ACCOUNT_KEYPAIR", "/data/config/vote-account-keypair.json")
 
     # Identity must be mounted for validator mode
     if not os.path.isfile(IDENTITY_FILE):
@@ -386,15 +418,19 @@ def build_validator_args() -> list[str]:
     # Print vote account pubkey
     result = subprocess.run(
         ["solana-keygen", "pubkey", vote_keypair],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode == 0:
         log.info("Vote account: %s", result.stdout.strip())
 
     args = build_common_args()
     args += [
-        "--vote-account", vote_keypair,
-        "--log", "-",
+        "--vote-account",
+        vote_keypair,
+        "--log",
+        "-",
     ]
 
     # Jito relayer URL (validator-only)
@@ -435,14 +471,17 @@ def graceful_exit(child: subprocess.Popen[bytes], reason: str = "SIGTERM") -> No
     try:
         result = subprocess.run(
             ["agave-validator", "exit", "--force", "--ledger", LEDGER_DIR],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if result.returncode == 0:
             log.info("Admin RPC exit requested successfully")
         else:
             log.warning(
                 "Admin RPC exit returned %d: %s",
-                result.returncode, result.stderr.strip(),
+                result.returncode,
+                result.stderr.strip(),
             )
     except subprocess.TimeoutExpired:
         log.warning("Admin RPC exit command timed out after 30s")
@@ -512,8 +551,13 @@ def _gap_monitor(
             gap = mainnet_slot - local_slot
             if gap > threshold:
                 consecutive += 1
-                log.warning("Gap %d > %d (%d/%d consecutive)",
-                            gap, threshold, consecutive, required_checks)
+                log.warning(
+                    "Gap %d > %d (%d/%d consecutive)",
+                    gap,
+                    threshold,
+                    consecutive,
+                    required_checks,
+                )
                 if consecutive >= required_checks:
                     log.warning("Leapfrog triggered: gap %d", gap)
                     leapfrog.set()
@@ -558,6 +602,7 @@ def cmd_serve() -> None:
         script_dir = Path(__file__).resolve().parent
         sys.path.insert(0, str(script_dir))
         from ip_echo_preflight import main as ip_echo_main
+
         if ip_echo_main() != 0:
             sys.exit(1)
 
@@ -582,13 +627,24 @@ def cmd_serve() -> None:
         shutting_down = threading.Event()
         leapfrog = threading.Event()
 
-        signal.signal(signal.SIGUSR1,
-                      lambda _sig, _frame: child.send_signal(signal.SIGUSR1))
+        def _forward_sigusr1(
+            _sig: int, _frame: object, _child: subprocess.Popen[bytes] = child
+        ) -> None:
+            _child.send_signal(signal.SIGUSR1)
 
-        def _on_sigterm(_sig: int, _frame: object) -> None:
-            shutting_down.set()
+        signal.signal(signal.SIGUSR1, _forward_sigusr1)
+
+        def _on_sigterm(
+            _sig: int,
+            _frame: object,
+            _shutting_down: threading.Event = shutting_down,
+            _child: subprocess.Popen = child,
+        ) -> None:
+            _shutting_down.set()
             threading.Thread(
-                target=graceful_exit, args=(child,), daemon=True,
+                target=graceful_exit,
+                args=(_child,),
+                daemon=True,
             ).start()
 
         signal.signal(signal.SIGTERM, _on_sigterm)

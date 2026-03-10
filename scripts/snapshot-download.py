@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import http.client
 import json
 import logging
 import os
@@ -43,7 +44,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from http.client import HTTPResponse
 from pathlib import Path
-from typing import NoReturn
+from typing import IO
 from urllib.request import Request
 
 log: logging.Logger = logging.getLogger("snapshot-download")
@@ -57,9 +58,7 @@ CLUSTER_RPC: dict[str, str] = {
 # Snapshot filenames:
 #   snapshot-<slot>-<hash>.tar.zst
 #   incremental-snapshot-<base_slot>-<slot>-<hash>.tar.zst
-FULL_SNAP_RE: re.Pattern[str] = re.compile(
-    r"^snapshot-(\d+)-([A-Za-z0-9]+)\.tar\.(zst|bz2)$"
-)
+FULL_SNAP_RE: re.Pattern[str] = re.compile(r"^snapshot-(\d+)-([A-Za-z0-9]+)\.tar\.(zst|bz2)$")
 INCR_SNAP_RE: re.Pattern[str] = re.compile(
     r"^incremental-snapshot-(\d+)-(\d+)-([A-Za-z0-9]+)\.tar\.(zst|bz2)$"
 )
@@ -86,24 +85,28 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(
         self,
         req: Request,
-        fp: HTTPResponse,
+        fp: IO[bytes],
         code: int,
         msg: str,
-        headers: dict[str, str],  # type: ignore[override]
+        headers: http.client.HTTPMessage,
         newurl: str,
-    ) -> None:
+    ) -> Request | None:
         return None
 
 
-def rpc_post(url: str, method: str, params: list[object] | None = None,
-             timeout: int = 25) -> object | None:
+def rpc_post(
+    url: str, method: str, params: list[object] | None = None, timeout: int = 25
+) -> object | None:
     """JSON-RPC POST. Returns parsed 'result' field or None on error."""
-    payload: bytes = json.dumps({
-        "jsonrpc": "2.0", "id": 1,
-        "method": method, "params": params or [],
-    }).encode()
-    req = Request(url, data=payload,
-                  headers={"Content-Type": "application/json"})
+    payload: bytes = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": method,
+            "params": params or [],
+        }
+    ).encode()
+    req = Request(url, data=payload, headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data: dict[str, object] = json.loads(resp.read())
@@ -181,6 +184,7 @@ def _parse_snapshot_filename(location: str) -> tuple[str, str | None]:
     if location.startswith("http://") or location.startswith("https://"):
         # Absolute URL — extract path
         from urllib.parse import urlparse
+
         path: str = urlparse(location).path
     else:
         path = location
@@ -218,6 +222,8 @@ def probe_rpc_snapshot(
     fm: re.Match[str] | None = FULL_SNAP_RE.match(full_filename)
     if not fm:
         return None
+    if full_path is None:
+        return None
 
     full_snap_slot: int = int(fm.group(1))
     slots_diff: int = current_slot - full_snap_slot
@@ -236,7 +242,7 @@ def probe_rpc_snapshot(
         if m:
             inc_base_slot: int = int(m.group(1))
             # Incremental must be based on this source's full snapshot
-            if inc_base_slot == full_snap_slot:
+            if inc_base_slot == full_snap_slot and inc_path is not None:
                 file_paths.append(inc_path)
 
     return SnapshotSource(
@@ -267,8 +273,11 @@ def discover_sources(
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as pool:
         futures: dict[concurrent.futures.Future[SnapshotSource | None], str] = {
             pool.submit(
-                probe_rpc_snapshot, addr, current_slot,
-                max_age_slots, max_latency_ms,
+                probe_rpc_snapshot,
+                addr,
+                current_slot,
+                max_age_slots,
+                max_latency_ms,
             ): addr
             for addr in rpc_nodes
         }
@@ -276,8 +285,12 @@ def discover_sources(
         for future in concurrent.futures.as_completed(futures):
             done += 1
             if done % 200 == 0:
-                log.info("  probed %d/%d nodes, %d sources found",
-                         done, len(rpc_nodes), len(sources))
+                log.info(
+                    "  probed %d/%d nodes, %d sources found",
+                    done,
+                    len(rpc_nodes),
+                    len(sources),
+                )
             try:
                 result: SnapshotSource | None = future.result()
             except (urllib.error.URLError, OSError, TimeoutError) as e:
@@ -357,8 +370,12 @@ def download_aria2c(
     ]
 
     log.info("Downloading %s", filename)
-    log.info("  aria2c: %d connections × %d mirrors (%d splits)",
-             connections, num_mirrors, total_splits)
+    log.info(
+        "  aria2c: %d connections × %d mirrors (%d splits)",
+        connections,
+        num_mirrors,
+        total_splits,
+    )
 
     start: float = time.monotonic()
     result: subprocess.CompletedProcess[bytes] = subprocess.run(cmd)
@@ -374,8 +391,8 @@ def download_aria2c(
         return False
 
     size_bytes: int = filepath.stat().st_size
-    size_gb: float = size_bytes / (1024 ** 3)
-    avg_mb: float = size_bytes / elapsed / (1024 ** 2) if elapsed > 0 else 0
+    size_gb: float = size_bytes / (1024**3)
+    avg_mb: float = size_bytes / elapsed / (1024**2) if elapsed > 0 else 0
     log.info("  Done: %.1f GB in %.0fs (%.1f MiB/s avg)", size_gb, elapsed, avg_mb)
     return True
 
@@ -387,33 +404,80 @@ def main() -> int:
     p: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Download Solana snapshots with aria2c parallel downloads",
     )
-    p.add_argument("-o", "--output", default="/srv/solana/snapshots",
-                   help="Snapshot output directory (default: /srv/solana/snapshots)")
-    p.add_argument("-c", "--cluster", default="mainnet-beta",
-                   choices=list(CLUSTER_RPC),
-                   help="Solana cluster (default: mainnet-beta)")
-    p.add_argument("-r", "--rpc", default=None,
-                   help="RPC URL for cluster discovery (default: public RPC)")
-    p.add_argument("-n", "--connections", type=int, default=16,
-                   help="aria2c connections per download (default: 16)")
-    p.add_argument("-t", "--threads", type=int, default=500,
-                   help="Threads for parallel RPC probing (default: 500)")
-    p.add_argument("--max-snapshot-age", type=int, default=1300,
-                   help="Max snapshot age in slots (default: 1300)")
-    p.add_argument("--max-latency", type=float, default=100,
-                   help="Max RPC probe latency in ms (default: 100)")
-    p.add_argument("--min-download-speed", type=int, default=20,
-                   help="Min download speed in MiB/s (default: 20)")
-    p.add_argument("--measurement-time", type=int, default=7,
-                   help="Speed measurement duration in seconds (default: 7)")
-    p.add_argument("--max-speed-checks", type=int, default=15,
-                   help="Max nodes to benchmark before giving up (default: 15)")
-    p.add_argument("--version", default=None,
-                   help="Filter nodes by version prefix (e.g. '2.2')")
-    p.add_argument("--full-only", action="store_true",
-                   help="Download only full snapshot, skip incremental")
-    p.add_argument("--dry-run", action="store_true",
-                   help="Find best source and print URL, don't download")
+    p.add_argument(
+        "-o",
+        "--output",
+        default="/srv/solana/snapshots",
+        help="Snapshot output directory (default: /srv/solana/snapshots)",
+    )
+    p.add_argument(
+        "-c",
+        "--cluster",
+        default="mainnet-beta",
+        choices=list(CLUSTER_RPC),
+        help="Solana cluster (default: mainnet-beta)",
+    )
+    p.add_argument(
+        "-r",
+        "--rpc",
+        default=None,
+        help="RPC URL for cluster discovery (default: public RPC)",
+    )
+    p.add_argument(
+        "-n",
+        "--connections",
+        type=int,
+        default=16,
+        help="aria2c connections per download (default: 16)",
+    )
+    p.add_argument(
+        "-t",
+        "--threads",
+        type=int,
+        default=500,
+        help="Threads for parallel RPC probing (default: 500)",
+    )
+    p.add_argument(
+        "--max-snapshot-age",
+        type=int,
+        default=1300,
+        help="Max snapshot age in slots (default: 1300)",
+    )
+    p.add_argument(
+        "--max-latency",
+        type=float,
+        default=100,
+        help="Max RPC probe latency in ms (default: 100)",
+    )
+    p.add_argument(
+        "--min-download-speed",
+        type=int,
+        default=20,
+        help="Min download speed in MiB/s (default: 20)",
+    )
+    p.add_argument(
+        "--measurement-time",
+        type=int,
+        default=7,
+        help="Speed measurement duration in seconds (default: 7)",
+    )
+    p.add_argument(
+        "--max-speed-checks",
+        type=int,
+        default=15,
+        help="Max nodes to benchmark before giving up (default: 15)",
+    )
+    p.add_argument("--version", default=None, help="Filter nodes by version prefix (e.g. '2.2')")
+    p.add_argument(
+        "--full-only",
+        action="store_true",
+        help="Download only full snapshot, skip incremental",
+    )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Find best source and print URL, don't download",
+    )
     p.add_argument("-v", "--verbose", action="store_true")
     args: argparse.Namespace = p.parse_args()
 
@@ -440,7 +504,8 @@ def main() -> int:
 
     # Discover sources
     sources: list[SnapshotSource] = discover_sources(
-        rpc_url, current_slot,
+        rpc_url,
+        current_slot,
         max_age_slots=args.max_snapshot_age,
         max_latency_ms=args.max_latency,
         threads=args.threads,
@@ -466,21 +531,31 @@ def main() -> int:
 
         speed: float = measure_speed(source.rpc_address, args.measurement_time)
         source.download_speed = speed
-        speed_mib: float = speed / (1024 ** 2)
+        speed_mib: float = speed / (1024**2)
 
         if speed < min_speed_bytes:
-            log.info("  %s: %.1f MiB/s (too slow, need >=%d MiB/s)",
-                     source.rpc_address, speed_mib, args.min_download_speed)
+            log.info(
+                "  %s: %.1f MiB/s (too slow, need >=%d MiB/s)",
+                source.rpc_address,
+                speed_mib,
+                args.min_download_speed,
+            )
             continue
 
-        log.info("  %s: %.1f MiB/s (latency: %.0fms, age: %d slots)",
-                 source.rpc_address, speed_mib,
-                 source.latency_ms, source.slots_diff)
+        log.info(
+            "  %s: %.1f MiB/s (latency: %.0fms, age: %d slots)",
+            source.rpc_address,
+            speed_mib,
+            source.latency_ms,
+            source.slots_diff,
+        )
         fast_sources.append(source)
 
     if not fast_sources:
-        log.error("No source met minimum speed requirement (%d MiB/s)",
-                  args.min_download_speed)
+        log.error(
+            "No source met minimum speed requirement (%d MiB/s)",
+            args.min_download_speed,
+        )
         log.info("Try: --min-download-speed 10")
         return 1
 
@@ -488,8 +563,7 @@ def main() -> int:
     best: SnapshotSource = fast_sources[0]
     file_paths: list[str] = best.file_paths
     if args.full_only:
-        file_paths = [fp for fp in file_paths
-                      if fp.rsplit("/", 1)[-1].startswith("snapshot-")]
+        file_paths = [fp for fp in file_paths if fp.rsplit("/", 1)[-1].startswith("snapshot-")]
 
     # Build mirror URL lists: for each file, collect URLs from all fast sources
     # that serve the same filename
@@ -504,9 +578,13 @@ def main() -> int:
                     break
         download_plan.append((filename, mirror_urls))
 
-    speed_mib: float = best.download_speed / (1024 ** 2)
-    log.info("Best source: %s (%.1f MiB/s), %d mirrors total",
-             best.rpc_address, speed_mib, len(fast_sources))
+    best_speed_mib: float = best.download_speed / (1024**2)
+    log.info(
+        "Best source: %s (%.1f MiB/s), %d mirrors total",
+        best.rpc_address,
+        best_speed_mib,
+        len(fast_sources),
+    )
     for filename, mirror_urls in download_plan:
         log.info("  %s (%d mirrors)", filename, len(mirror_urls))
         for url in mirror_urls:
@@ -525,8 +603,11 @@ def main() -> int:
     for filename, mirror_urls in download_plan:
         filepath: Path = Path(args.output) / filename
         if filepath.exists() and filepath.stat().st_size > 0:
-            log.info("Skipping %s (already exists: %.1f GB)",
-                     filename, filepath.stat().st_size / (1024 ** 3))
+            log.info(
+                "Skipping %s (already exists: %.1f GB)",
+                filename,
+                filepath.stat().st_size / (1024**3),
+            )
             continue
         if not download_aria2c(mirror_urls, args.output, filename, args.connections):
             log.error("Failed to download %s", filename)
@@ -535,9 +616,9 @@ def main() -> int:
     total_elapsed: float = time.monotonic() - total_start
     log.info("All downloads complete in %.0fs", total_elapsed)
     for filename, _ in download_plan:
-        fp: Path = Path(args.output) / filename
-        if fp.exists():
-            log.info("  %s (%.1f GB)", fp.name, fp.stat().st_size / (1024 ** 3))
+        result_path: Path = Path(args.output) / filename
+        if result_path.exists():
+            log.info("  %s (%.1f GB)", result_path.name, result_path.stat().st_size / (1024**3))
 
     return 0
 
