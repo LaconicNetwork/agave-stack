@@ -78,6 +78,8 @@ configmaps:
   monitoring-grafana-datasources: config/monitoring/grafana-datasources
   monitoring-grafana-dashboards: config/monitoring/grafana-dashboards
 config:
+  # Node name for Grafana dashboard selector
+  NODE_NAME: biscayne
   # Mode: 'rpc' (non-voting) — matches current biscayne systemd config
   AGAVE_MODE: rpc
   # Mainnet entrypoints

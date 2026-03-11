@@ -146,12 +146,12 @@ def get_incremental_slot(snapshots_dir: str, full_slot: int | None) -> int | Non
 
 
 def maybe_download_snapshot(snapshots_dir: str) -> None:
-    """Ensure full + incremental snapshots exist before starting.
+    """Ensure snapshots are ready before starting.
 
-    The validator should always start from a full + incremental pair to
-    minimize replay time. If either is missing or the full is too old,
-    download fresh ones via download_best_snapshot (which does rolling
-    incremental convergence after downloading the full).
+    Tries to start from a full + incremental pair to minimize replay time.
+    If no matching incremental is found after a few attempts, starts from
+    the full snapshot alone (the validator replays the gap). If the full
+    is missing or too old, downloads a fresh full + incremental pair.
 
     Controlled by env vars:
       SNAPSHOT_AUTO_DOWNLOAD (default: true) — enable/disable
@@ -200,15 +200,32 @@ def maybe_download_snapshot(snapshots_dir: str) -> None:
                 inc_gap,
                 convergence,
             )
-        # Fresh full, need a fresh incremental
+        # Fresh full — try to get an incremental, but don't block forever.
+        # Peers may not have incrementals for our base slot (each validator
+        # produces full snapshots at different slots). The validator can
+        # start from a full snapshot alone and replay the gap.
+        max_inc_attempts = 3
         log.info("Downloading incremental for full at slot %d", local_slot)
-        while True:
+        for attempt in range(1, max_inc_attempts + 1):
             if download_incremental_for_slot(
                 snapshots_dir, local_slot, convergence_slots=convergence
             ):
                 return
-            log.warning("Incremental download failed — retrying in %ds", retry_delay)
-            time.sleep(retry_delay)
+            log.warning(
+                "Incremental download attempt %d/%d failed",
+                attempt,
+                max_inc_attempts,
+            )
+            if attempt < max_inc_attempts:
+                log.info("Retrying in %ds", retry_delay)
+                time.sleep(retry_delay)
+        log.info(
+            "No incremental found after %d attempts — starting from "
+            "full snapshot at slot %d (validator will replay the gap)",
+            max_inc_attempts,
+            local_slot,
+        )
+        return
 
     # No full or full too old — download both
     log.info("Downloading full + incremental")

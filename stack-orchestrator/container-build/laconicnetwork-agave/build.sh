@@ -7,7 +7,7 @@ source ${CERC_CONTAINER_BASE_DIR}/build-base.sh
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 AGAVE_REPO="${AGAVE_REPO:-https://github.com/anza-xyz/agave.git}"
-AGAVE_VERSION="${AGAVE_VERSION:-v3.1.9}"
+AGAVE_VERSION="${AGAVE_VERSION:-v3.1.10}"
 
 docker build -t laconicnetwork/agave:local \
   --build-arg AGAVE_REPO="$AGAVE_REPO" \

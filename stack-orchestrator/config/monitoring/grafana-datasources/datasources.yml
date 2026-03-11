@@ -4,7 +4,7 @@ datasources:
   - name: InfluxDB
     type: influxdb
     access: proxy
-    url: http://monitoring-influxdb:8086
+    url: http://localhost:8086
     database: agave_metrics
     user: admin
     isDefault: true

@@ -35,6 +35,7 @@ services:
     restart: unless-stopped
     network_mode: host
     environment:
+      NODE_NAME: ${NODE_NAME:-validator}
       NODE_RPC_URL: ${NODE_RPC_URL:-http://localhost:8899}
       CANONICAL_RPC_URL: ${CANONICAL_RPC_URL:-https://api.mainnet-beta.solana.com}
       INFLUXDB_URL: ${INFLUXDB_URL:-http://localhost:8086}

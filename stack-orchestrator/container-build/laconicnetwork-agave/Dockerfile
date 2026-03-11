@@ -6,7 +6,7 @@
 #   AGAVE_VERSION - git tag to build (e.g. v3.1.9, v3.1.8-jito)
 
 ARG AGAVE_REPO=https://github.com/anza-xyz/agave.git
-ARG AGAVE_VERSION=v3.1.9
+ARG AGAVE_VERSION=v3.1.10
 
 # ---------- Stage 1: Build ----------
 FROM rust:1.85-bookworm AS builder
@@ -30,13 +30,6 @@ WORKDIR /build
 RUN git clone "$AGAVE_REPO" --depth 1 --branch "$AGAVE_VERSION" --recurse-submodules agave
 WORKDIR /build/agave
 
-# Cherry-pick --public-tvu-address support (anza-xyz/agave PR #6778, commit 9f4b3ae)
-# This flag only exists on master, not in v3.1.9 — fetch the PR ref and cherry-pick
-ARG TVU_ADDRESS_PR=6778
-RUN if [ -n "$TVU_ADDRESS_PR" ]; then \
-      git fetch --depth 50 origin "pull/${TVU_ADDRESS_PR}/head:tvu-pr" && \
-      git cherry-pick --no-commit tvu-pr; \
-    fi
 
 # Build all binaries using the upstream install script
 RUN CI_COMMIT=$(git rev-parse HEAD) scripts/cargo-install-all.sh /solana-release
