@@ -128,6 +128,17 @@ def clean_snapshots(snapshots_dir: str) -> None:
             entry.unlink(missing_ok=True)
 
 
+def clean_incrementals(snapshots_dir: str) -> None:
+    """Remove only incremental snapshot files, preserving the full snapshot."""
+    snap_path = Path(snapshots_dir)
+    if not snap_path.is_dir():
+        return
+    for entry in snap_path.iterdir():
+        if entry.name.startswith("incremental-snapshot-"):
+            log.info("Removing stale incremental: %s", entry.name)
+            entry.unlink(missing_ok=True)
+
+
 def get_incremental_slot(snapshots_dir: str, full_slot: int | None) -> int | None:
     """Get the highest incremental snapshot slot matching the full's base slot."""
     if full_slot is None:
@@ -229,6 +240,55 @@ def maybe_download_snapshot(snapshots_dir: str) -> None:
 
     # No full or full too old — download both
     log.info("Downloading full + incremental")
+    clean_snapshots(snapshots_dir)
+    while True:
+        if download_best_snapshot(snapshots_dir, convergence_slots=convergence):
+            return
+        log.warning("Snapshot download failed — retrying in %ds", retry_delay)
+        time.sleep(retry_delay)
+
+
+def leapfrog_snapshot(snapshots_dir: str) -> None:
+    """Download a fresh incremental for the existing full snapshot.
+
+    Called after gap_monitor triggers leapfrog. The full snapshot's base slot
+    is still valid — peers retain incrementals for recent base slots. The
+    ledger is preserved (it has turbine shreds accumulating at the tip).
+
+    Strategy:
+      1. Keep the full snapshot, wipe stale incrementals only
+      2. Download a fresh incremental for the existing full's base slot
+      3. If no peer has a matching incremental (base slot orphaned),
+         fall back to a fresh full+incremental pair
+    """
+    script_dir = Path(__file__).resolve().parent
+    sys.path.insert(0, str(script_dir))
+    from snapshot_download import download_best_snapshot, download_incremental_for_slot
+
+    convergence = int(env("SNAPSHOT_CONVERGENCE_SLOTS", "500"))
+    retry_delay = int(env("SNAPSHOT_RETRY_DELAY", "60"))
+
+    local_slot = get_local_snapshot_slot(snapshots_dir)
+    if local_slot is None:
+        log.warning("No local full snapshot — falling back to full download")
+        clean_snapshots(snapshots_dir)
+        while True:
+            if download_best_snapshot(snapshots_dir, convergence_slots=convergence):
+                return
+            log.warning("Snapshot download failed — retrying in %ds", retry_delay)
+            time.sleep(retry_delay)
+
+    log.info("Leapfrog: keeping full at slot %d, downloading fresh incremental", local_slot)
+    clean_incrementals(snapshots_dir)
+
+    if download_incremental_for_slot(snapshots_dir, local_slot, convergence_slots=convergence):
+        return
+
+    # No peer has incrementals for our base slot — download fresh full+incremental
+    log.warning(
+        "No incremental available for base slot %d — downloading fresh full+incremental",
+        local_slot,
+    )
     clean_snapshots(snapshots_dir)
     while True:
         if download_best_snapshot(snapshots_dir, convergence_slots=convergence):
@@ -633,10 +693,11 @@ def cmd_serve() -> None:
         args = build_validator_args()
     args = append_extra_args(args)
 
-    # Main loop: download → run → monitor → leapfrog if needed
-    while True:
-        maybe_download_snapshot(SNAPSHOTS_DIR)
+    # Initial snapshot check (cold start only)
+    maybe_download_snapshot(SNAPSHOTS_DIR)
 
+    # Main loop: run → monitor → leapfrog if needed
+    while True:
         Path("/tmp/entrypoint-start").write_text(str(time.time()))
         log.info("Starting agave-validator with %d arguments", len(args))
         child = subprocess.Popen(["agave-validator"] + args)
@@ -677,7 +738,8 @@ def cmd_serve() -> None:
         child.wait()
 
         if leapfrog.is_set():
-            log.info("Leapfrog: restarting with fresh incremental")
+            log.info("Leapfrog: downloading fresh incremental for existing full")
+            leapfrog_snapshot(SNAPSHOTS_DIR)
             continue
 
         sys.exit(child.returncode)
