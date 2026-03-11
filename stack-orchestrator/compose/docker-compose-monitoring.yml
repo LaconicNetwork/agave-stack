@@ -2,6 +2,7 @@ services:
   monitoring-influxdb:
     image: influxdb:1.8
     restart: unless-stopped
+    entrypoint: ["/docker-entrypoint-initdb.d/entrypoint-wrapper.sh"]
     environment:
       INFLUXDB_DB: agave_metrics
       INFLUXDB_HTTP_AUTH_ENABLED: "true"
@@ -10,6 +11,7 @@ services:
       INFLUXDB_REPORTING_DISABLED: "true"
     volumes:
       - monitoring-influxdb-data:/var/lib/influxdb
+      - monitoring-influxdb-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "8086"
 
@@ -42,6 +44,7 @@ services:
 
 volumes:
   monitoring-influxdb-data:
+  monitoring-influxdb-init:
   monitoring-grafana-data:
   monitoring-grafana-datasources:
   monitoring-grafana-dashboards:

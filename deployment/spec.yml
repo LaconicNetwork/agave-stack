@@ -72,6 +72,7 @@ volumes:
   monitoring-influxdb-data: /srv/kind/solana/monitoring/influxdb
   monitoring-grafana-data: /srv/kind/solana/monitoring/grafana
 configmaps:
+  monitoring-influxdb-init: config/monitoring/influxdb-init
   monitoring-telegraf-config: config/monitoring/telegraf-config
   monitoring-telegraf-scripts: config/monitoring/scripts
   monitoring-grafana-datasources: config/monitoring/grafana-datasources
