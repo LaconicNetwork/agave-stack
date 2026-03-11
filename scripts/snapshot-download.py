@@ -618,7 +618,11 @@ def main() -> int:
     for filename, _ in download_plan:
         result_path: Path = Path(args.output) / filename
         if result_path.exists():
-            log.info("  %s (%.1f GB)", result_path.name, result_path.stat().st_size / (1024**3))
+            log.info(
+                "  %s (%.1f GB)",
+                result_path.name,
+                result_path.stat().st_size / (1024**3),
+            )
 
     return 0
 
