@@ -727,6 +727,19 @@ def cmd_serve() -> None:
 
         signal.signal(signal.SIGTERM, _on_sigterm)
 
+        def _on_sighup(
+            _sig: int,
+            _frame: object,
+            _shutting_down: threading.Event = shutting_down,
+            _child: subprocess.Popen = child,
+        ) -> None:
+            log.info("Received SIGHUP, exiting for container restart")
+            _shutting_down.set()
+            graceful_exit(_child, reason="SIGHUP")
+            os._exit(0)
+
+        signal.signal(signal.SIGHUP, _on_sighup)
+
         # Start gap monitor
         monitor = threading.Thread(
             target=_gap_monitor,
