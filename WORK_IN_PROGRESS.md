@@ -184,7 +184,7 @@ Script location: `/tmp/shred-unwrap.py`
 
 | Item | Value |
 |------|-------|
-| Biscayne validator identity | `4WeLUxfQghbhsLEuwaAzjZiHg2VBw87vqHc4iZrGvKPr` |
+| Biscayne validator identity | `9gpFgMABtfeDXdscLB7PK4me4NcZ8tB8aJNS8PABoTR3` |
 | Biscayne IP | `186.233.184.235` |
 | laconic-was-sw01 public IP | `64.92.84.81` (Et1/1) |
 | laconic-was-sw01 backbone IP | `172.16.1.188` (Et4/1) |
