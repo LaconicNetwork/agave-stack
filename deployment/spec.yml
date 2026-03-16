@@ -3,6 +3,7 @@
 # Identity: 9gpFgMABtfeDXdscLB7PK4me4NcZ8tB8aJNS8PABoTR3
 stack: /srv/deployments/agave-stack/stack-orchestrator/stacks/agave
 deploy-to: k8s-kind
+image-registry: localhost:5001
 kind-mount-root: /srv/kind
 network:
   http-proxy:
@@ -92,7 +93,7 @@ config:
   RPC_PORT: '8899'
   RPC_BIND_ADDRESS: 0.0.0.0
   GOSSIP_PORT: '8001'
-  GOSSIP_HOST: 137.239.194.65
+  GOSSIP_HOST: 186.233.184.235
   DYNAMIC_PORT_RANGE: 9000-10000
   # Cluster verification
   EXPECTED_GENESIS_HASH: 5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d
