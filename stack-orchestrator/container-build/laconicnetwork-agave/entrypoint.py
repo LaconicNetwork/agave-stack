@@ -423,12 +423,10 @@ def build_common_args() -> list[str]:
     # Metrics — just needs to be in the environment, agave reads it directly
     # (env var is already set, nothing to pass as arg)
 
-    # Gossip host / TVU address
-    gossip_host = env("GOSSIP_HOST")
-    if gossip_host:
-        args += ["--gossip-host", gossip_host]
-    elif env("PUBLIC_TVU_ADDRESS"):
-        args += ["--public-tvu-address", env("PUBLIC_TVU_ADDRESS")]
+    # Bind address (replaces deprecated --gossip-host)
+    bind_address = env("BIND_ADDRESS") or env("GOSSIP_HOST")
+    if bind_address:
+        args += ["--bind-address", bind_address]
 
     # Jito flags
     if env("JITO_ENABLE") == "true":
