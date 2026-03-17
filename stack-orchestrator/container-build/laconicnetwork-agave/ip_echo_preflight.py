@@ -194,7 +194,7 @@ def run_preflight(
 
         if expected_ip and seen_ip != expected_ip:
             log.error(
-                "IP MISMATCH: entrypoint sees %s, expected %s (GOSSIP_HOST). "
+                "IP MISMATCH: entrypoint sees %s, expected %s (BIND_ADDRESS). "
                 "Outbound mangle/SNAT path is broken.",
                 seen_ip,
                 expected_ip,
@@ -249,7 +249,7 @@ def main() -> int:
     gossip_port = int(os.environ.get("GOSSIP_PORT", "8001"))
     dynamic_range = os.environ.get("DYNAMIC_PORT_RANGE", "9000-10000")
     range_start = int(dynamic_range.split("-")[0])
-    expected_ip = os.environ.get("GOSSIP_HOST", "")
+    expected_ip = os.environ.get("BIND_ADDRESS", "")
 
     # Test gossip + first 3 ports from dynamic range (4 max per ip_echo message)
     udp_ports = [gossip_port, range_start, range_start + 2, range_start + 3]

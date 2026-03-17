@@ -424,7 +424,7 @@ def build_common_args() -> list[str]:
     # (env var is already set, nothing to pass as arg)
 
     # Bind address (replaces deprecated --gossip-host)
-    bind_address = env("BIND_ADDRESS") or env("GOSSIP_HOST")
+    bind_address = env("BIND_ADDRESS")
     if bind_address:
         args += ["--bind-address", bind_address]
 
