@@ -18,7 +18,11 @@ PASS="${INFLUXDB_ADMIN_PASSWORD:-admin}"
 
 wait_for_influxdb() {
     for i in $(seq 1 30); do
-        if influx -execute "SHOW DATABASES" >/dev/null 2>&1; then
+        # Try with auth first (existing data dir), then without (fresh init).
+        # Either succeeding means influxdb is ready.
+        if influx -username "${ADMIN}" -password "${PASS}" \
+                -execute "SHOW DATABASES" >/dev/null 2>&1 ||
+           influx -execute "SHOW DATABASES" >/dev/null 2>&1; then
             return 0
         fi
         sleep 1
