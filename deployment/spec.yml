@@ -14,9 +14,6 @@ network:
         - path: /
           proxy-to: agave-validator:8900
           websocket: true
-  # Pod ports exposed via k8s. Gossip (8001) and TVU (9000) are NOT
-  # internet-facing — russula delivers via the docker bridge. These
-  # port mappings just ensure k8s exposes them on the pod network.
   ports:
     agave-validator:
       - '8899'
@@ -86,27 +83,16 @@ config:
   NODE_NAME: biscayne
   # Mode: 'rpc' (non-voting) — matches current biscayne systemd config
   AGAVE_MODE: rpc
-  # Gossip entrypoint — russula relays gossip from remote probes.
-  # The validator does NOT participate in gossip directly. No BIND_ADDRESS,
-  # no outbound gossip advertisement, no turbine tree placement.
-  # Russula pushes gossip to the validator's gossip port; the entrypoint
-  # just needs to be a valid address for agave startup. Russula's gossip
-  # listener is on port 7100 on the host (reachable from the pod via the
-  # kind bridge gateway).
-  # See: russula/docs/2026-03-12-shred-collector-design.md
-  # Gateway confirmed: docker inspect shows 172.20.0.1 (2026-03-28)
-  VALIDATOR_ENTRYPOINT: 172.20.0.1:7100
-  EXTRA_ENTRYPOINTS: ''
+  # Mainnet entrypoints — validator joins gossip directly with staked identity.
+  # Probes at remote sites deliver additional shreds to the TVU port via
+  # russula, supplementing turbine. Agave deduplicates natively.
+  VALIDATOR_ENTRYPOINT: entrypoint.mainnet-beta.solana.com:8001
+  EXTRA_ENTRYPOINTS: entrypoint2.mainnet-beta.solana.com:8001 entrypoint3.mainnet-beta.solana.com:8001 entrypoint4.mainnet-beta.solana.com:8001 entrypoint5.mainnet-beta.solana.com:8001
   # Known validators (Solana Foundation, Everstake, Chorus One)
-  # Still needed for snapshot/genesis verification even without direct gossip.
   KNOWN_VALIDATOR: 7Np41oeYqPefeNQEHSv1UDhYrehxin3NStELsSKCT4K2
   EXTRA_KNOWN_VALIDATORS: GdnSyH3YtwcxFvQrVVJMm1JhTS4QVX7MFsX56uJLUfiZ dDzy5SR3AXdYWVqbDEkVFdvSPCtS9ihF5kJkHCtXoFs DE1bawNcRJB9rVm3buyMVfr8mBEoyyu73NBovf2oXJsJ CakcnaRDHka2gXyfbEd2d3xsvkJkqsLw2akB3zsN1D2S C1ocKDYMCm2ooWptMMnpd5VEB2Nx4UMJgRuYofysyzcA GwHH8ciFhR8vejWCqmg8FWZUCNtubPY2esALvy5tBvji 6WgdYhhGE53WrZ7ywJA15hBVkw7CRbQ8yDBBTwmBtAHN
-  # Network — BIND_ADDRESS is required for agave to start (it won't
-  # auto-detect if the entrypoint is unreachable). Use the pod IP so
-  # agave binds to the local interface. With --allow-private-addr (set
-  # in RPC mode), private IPs are accepted. The validator won't be
-  # reachable from the internet, which is correct for russula architecture.
-  BIND_ADDRESS: 172.20.0.2
+  # Network — elastic IP for gossip advertisement + turbine tree placement
+  BIND_ADDRESS: 162.43.188.10
   RPC_PORT: '8899'
   RPC_BIND_ADDRESS: 0.0.0.0
   GOSSIP_PORT: '8001'
