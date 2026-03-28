@@ -101,8 +101,6 @@ config:
   # Still needed for snapshot/genesis verification even without direct gossip.
   KNOWN_VALIDATOR: 7Np41oeYqPefeNQEHSv1UDhYrehxin3NStELsSKCT4K2
   EXTRA_KNOWN_VALIDATORS: GdnSyH3YtwcxFvQrVVJMm1JhTS4QVX7MFsX56uJLUfiZ dDzy5SR3AXdYWVqbDEkVFdvSPCtS9ihF5kJkHCtXoFs DE1bawNcRJB9rVm3buyMVfr8mBEoyyu73NBovf2oXJsJ CakcnaRDHka2gXyfbEd2d3xsvkJkqsLw2akB3zsN1D2S C1ocKDYMCm2ooWptMMnpd5VEB2Nx4UMJgRuYofysyzcA GwHH8ciFhR8vejWCqmg8FWZUCNtubPY2esALvy5tBvji 6WgdYhhGE53WrZ7ywJA15hBVkw7CRbQ8yDBBTwmBtAHN
-  # Skip ip_echo preflight — validator is behind russula, not internet-facing
-  SKIP_IP_ECHO_PREFLIGHT: 'true'
   # Network — BIND_ADDRESS is required for agave to start (it won't
   # auto-detect if the entrypoint is unreachable). Use the pod IP so
   # agave binds to the local interface. With --allow-private-addr (set
