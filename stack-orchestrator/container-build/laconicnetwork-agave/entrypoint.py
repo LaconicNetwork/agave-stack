@@ -168,17 +168,39 @@ def maybe_download_snapshot(snapshots_dir: str) -> None:
       SNAPSHOT_AUTO_DOWNLOAD (default: true) — enable/disable
       SNAPSHOT_MAX_AGE_SLOTS (default: 100000) — full snapshot staleness threshold
         (one full snapshot generation, ~11 hours)
+      SNAPSHOT_FRESHNESS_SLOTS (default: 20000) — if the full snapshot is within
+        this many slots of mainnet, skip the benchmark and start immediately.
+        The validator replays the gap. Avoids ~2 min benchmark on every restart.
     """
     if not env_bool("SNAPSHOT_AUTO_DOWNLOAD", default=True):
         log.info("Snapshot auto-download disabled")
         return
 
     max_age = int(env("SNAPSHOT_MAX_AGE_SLOTS", "100000"))
+    freshness = int(env("SNAPSHOT_FRESHNESS_SLOTS", "20000"))
 
     mainnet_slot = rpc_get_slot(MAINNET_RPC)
     if mainnet_slot is None:
         log.warning("Cannot reach mainnet RPC — skipping snapshot check")
         return
+
+    # Check local full snapshot before importing snapshot_download.
+    # If the snapshot is fresh enough, we skip the benchmark entirely.
+    local_slot = get_local_snapshot_slot(snapshots_dir)
+    have_fresh_full = local_slot is not None and (mainnet_slot - local_slot) <= max_age
+
+    if have_fresh_full:
+        assert local_slot is not None
+        gap = mainnet_slot - local_slot
+        if gap <= freshness:
+            log.info(
+                "Full snapshot at slot %d is %d slots behind mainnet "
+                "(within freshness threshold %d) — starting without benchmark",
+                local_slot,
+                gap,
+                freshness,
+            )
+            return
 
     script_dir = Path(__file__).resolve().parent
     sys.path.insert(0, str(script_dir))
@@ -186,10 +208,6 @@ def maybe_download_snapshot(snapshots_dir: str) -> None:
 
     convergence = int(env("SNAPSHOT_CONVERGENCE_SLOTS", "500"))
     retry_delay = int(env("SNAPSHOT_RETRY_DELAY", "60"))
-
-    # Check local full snapshot
-    local_slot = get_local_snapshot_slot(snapshots_dir)
-    have_fresh_full = local_slot is not None and (mainnet_slot - local_slot) <= max_age
 
     if have_fresh_full:
         assert local_slot is not None
@@ -673,6 +691,11 @@ def cmd_serve() -> None:
         dirs.append(LOG_DIR)
     ensure_dirs(*dirs)
 
+    # ip_echo preflight: replicate agave's internal port reachability check
+    # (solana_net_utils::ip_echo_client) before downloading snapshots.
+    # This catches DNAT/firewall misconfig early instead of after a 60+
+    # minute snapshot download. Do NOT skip this — if the preflight fails,
+    # agave's internal check will also fail and the validator will crash.
     if not env_bool("SKIP_IP_ECHO_PREFLIGHT"):
         script_dir = Path(__file__).resolve().parent
         sys.path.insert(0, str(script_dir))

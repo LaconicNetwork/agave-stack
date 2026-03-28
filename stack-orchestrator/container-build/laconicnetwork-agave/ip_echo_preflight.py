@@ -1,19 +1,32 @@
 #!/usr/bin/env python3
 """ip_echo preflight — verify UDP port reachability before starting the validator.
 
-Implements the Solana ip_echo client protocol exactly:
+This MUST replicate agave's internal ip_echo check exactly. Agave runs
+the same protocol at startup (solana_net_utils::ip_echo_client, called from
+agave_validator::bootstrap::verify_reachable_ports). If this preflight passes
+but agave's check fails, the preflight is wrong. If this preflight is skipped,
+the validator will crash-loop with a cryptic "unable to determine public IP"
+or "Maximum retry count reached" error AFTER spending 60+ minutes downloading
+a snapshot.
+
+The check verifies that inbound UDP packets from the internet can reach the
+validator's gossip and TVU ports. This requires DNAT rules on the host
+forwarding from the elastic IP (BIND_ADDRESS) to the pod IP (172.20.0.2).
+Without DNAT, the packets are locally delivered to the host's dummy interface
+and never reach the pod. See biscayne-firewall.yml for the DNAT rules.
+
+Protocol (from agave net-utils/src/ip_echo_server.rs):
 1. Bind UDP sockets on the ports the validator will use
 2. TCP connect to entrypoint gossip port, send IpEchoServerMessage
 3. Parse IpEchoServerResponse (our IP as seen by entrypoint)
 4. Wait for entrypoint's UDP probes on each port
 5. Exit 0 if all ports reachable, exit 1 if any fail
 
-Wire format (from agave net-utils/src/):
+Wire format:
   Request:  4 null bytes + [u16; 4] tcp_ports LE + [u16; 4] udp_ports LE + \n
   Response: 4 null bytes + bincode IpAddr (variant byte + addr) + optional shred_version
 
-Called from entrypoint.py before snapshot download. Prevents wasting hours
-downloading a snapshot only to crash-loop on port reachability.
+Called from entrypoint.py before snapshot download.
 """
 
 from __future__ import annotations

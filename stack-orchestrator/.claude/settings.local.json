@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh:*)",
+      "Bash(rsync:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.malbeclabs.com)",
+      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:openillumi.com)",
+      "WebFetch(domain:pythonspeed.com)",
+      "WebFetch(domain:forum.level1techs.com)",
+      "WebFetch(domain:blog.hathora.dev)",
+      "WebFetch(domain:stinky.blog)",
+      "WebFetch(domain:forums.docker.com)",
+      "WebFetch(domain:www.flamingbytes.com)"
+    ]
+  }
+}
