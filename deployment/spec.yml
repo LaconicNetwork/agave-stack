@@ -14,6 +14,9 @@ network:
         - path: /
           proxy-to: agave-validator:8900
           websocket: true
+  # Pod ports exposed via k8s. Gossip (8001) and TVU (9000) are NOT
+  # internet-facing — russula delivers via the docker bridge. These
+  # port mappings just ensure k8s exposes them on the pod network.
   ports:
     agave-validator:
       - '8899'
@@ -83,25 +86,32 @@ config:
   NODE_NAME: biscayne
   # Mode: 'rpc' (non-voting) — matches current biscayne systemd config
   AGAVE_MODE: rpc
-  # Mainnet entrypoints
-  VALIDATOR_ENTRYPOINT: entrypoint.mainnet-beta.solana.com:8001
-  EXTRA_ENTRYPOINTS: entrypoint2.mainnet-beta.solana.com:8001 entrypoint3.mainnet-beta.solana.com:8001 entrypoint4.mainnet-beta.solana.com:8001 entrypoint5.mainnet-beta.solana.com:8001
+  # Gossip entrypoint — russula relays gossip from remote probes.
+  # The validator does NOT participate in gossip directly. No BIND_ADDRESS,
+  # no outbound gossip advertisement, no turbine tree placement.
+  # Russula pushes gossip to the validator's gossip port; the entrypoint
+  # just needs to be a valid address for agave startup. Russula's gossip
+  # listener is on port 7100 on the host (reachable from the pod via the
+  # kind bridge gateway).
+  # See: russula/docs/2026-03-12-shred-collector-design.md
+  # Gateway confirmed: docker inspect shows 172.20.0.1 (2026-03-28)
+  VALIDATOR_ENTRYPOINT: 172.20.0.1:7100
+  EXTRA_ENTRYPOINTS: ''
   # Known validators (Solana Foundation, Everstake, Chorus One)
+  # Still needed for snapshot/genesis verification even without direct gossip.
   KNOWN_VALIDATOR: 7Np41oeYqPefeNQEHSv1UDhYrehxin3NStELsSKCT4K2
   EXTRA_KNOWN_VALIDATORS: GdnSyH3YtwcxFvQrVVJMm1JhTS4QVX7MFsX56uJLUfiZ dDzy5SR3AXdYWVqbDEkVFdvSPCtS9ihF5kJkHCtXoFs DE1bawNcRJB9rVm3buyMVfr8mBEoyyu73NBovf2oXJsJ CakcnaRDHka2gXyfbEd2d3xsvkJkqsLw2akB3zsN1D2S C1ocKDYMCm2ooWptMMnpd5VEB2Nx4UMJgRuYofysyzcA GwHH8ciFhR8vejWCqmg8FWZUCNtubPY2esALvy5tBvji 6WgdYhhGE53WrZ7ywJA15hBVkw7CRbQ8yDBBTwmBtAHN
-  # Network
+  # Network — no BIND_ADDRESS (validator must not advertise itself in gossip)
   RPC_PORT: '8899'
   RPC_BIND_ADDRESS: 0.0.0.0
   GOSSIP_PORT: '8001'
-  BIND_ADDRESS: 162.43.188.10
   DYNAMIC_PORT_RANGE: 9000-10000
   # Cluster verification
   EXPECTED_GENESIS_HASH: 5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d
   EXPECTED_SHRED_VERSION: '50093'
-  # Storage
+  # Storage — snapshots downloaded externally via aria2c (biscayne-recover.yml)
+  NO_SNAPSHOTS: 'true'
   LIMIT_LEDGER_SIZE: '50000000'
-  MAXIMUM_SNAPSHOTS_TO_RETAIN: '1'
-  NO_INCREMENTAL_SNAPSHOTS: 'false'
   RUST_LOG: info,solana_metrics=warn
   SOLANA_METRICS_CONFIG: host=http://localhost:8086,db=agave_metrics,u=admin,p=admin
   # Jito MEV (NY region shred receiver) — disabled until voting enabled
