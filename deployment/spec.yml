@@ -91,8 +91,11 @@ config:
   # Known validators (Solana Foundation, Everstake, Chorus One)
   KNOWN_VALIDATOR: 7Np41oeYqPefeNQEHSv1UDhYrehxin3NStELsSKCT4K2
   EXTRA_KNOWN_VALIDATORS: GdnSyH3YtwcxFvQrVVJMm1JhTS4QVX7MFsX56uJLUfiZ dDzy5SR3AXdYWVqbDEkVFdvSPCtS9ihF5kJkHCtXoFs DE1bawNcRJB9rVm3buyMVfr8mBEoyyu73NBovf2oXJsJ CakcnaRDHka2gXyfbEd2d3xsvkJkqsLw2akB3zsN1D2S C1ocKDYMCm2ooWptMMnpd5VEB2Nx4UMJgRuYofysyzcA GwHH8ciFhR8vejWCqmg8FWZUCNtubPY2esALvy5tBvji 6WgdYhhGE53WrZ7ywJA15hBVkw7CRbQ8yDBBTwmBtAHN
-  # Network — elastic IP for gossip advertisement + turbine tree placement
-  BIND_ADDRESS: 162.43.188.10
+  # Network — no BIND_ADDRESS. Agave auto-detects its public IP via ip_echo
+  # (the SNAT rule makes outbound appear as the elastic IP 162.43.188.10).
+  # Agave advertises that IP in gossip but binds sockets to 0.0.0.0.
+  # Passing --bind-address forces agave to bind to that specific IP, which
+  # must exist inside the pod — it doesn't (elastic IP is on the host).
   RPC_PORT: '8899'
   RPC_BIND_ADDRESS: 0.0.0.0
   GOSSIP_PORT: '8001'
