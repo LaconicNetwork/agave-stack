@@ -73,11 +73,11 @@ volumes:
   monitoring-influxdb-data: /srv/kind/solana/monitoring/influxdb
   monitoring-grafana-data: /srv/kind/solana/monitoring/grafana
 configmaps:
-  monitoring-influxdb-init: config/monitoring/influxdb-init
-  monitoring-telegraf-config: config/monitoring/telegraf-config
-  monitoring-telegraf-scripts: config/monitoring/scripts
-  monitoring-grafana-datasources: config/monitoring/grafana-datasources
-  monitoring-grafana-dashboards: config/monitoring/grafana-dashboards
+  monitoring-influxdb-init: stack-orchestrator/config/monitoring/influxdb-init
+  monitoring-telegraf-config: stack-orchestrator/config/monitoring/telegraf-config
+  monitoring-telegraf-scripts: stack-orchestrator/config/monitoring/scripts
+  monitoring-grafana-datasources: stack-orchestrator/config/monitoring/grafana-datasources
+  monitoring-grafana-dashboards: stack-orchestrator/config/monitoring/grafana-dashboards
 config:
   # Node name for Grafana dashboard selector
   NODE_NAME: biscayne
