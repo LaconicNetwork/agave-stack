@@ -118,3 +118,16 @@ config:
   JITO_COMMISSION_BPS: '800'
   # DoubleZero
   DOUBLEZERO_RPC_ENDPOINT: http://127.0.0.1:8899
+  # Memory caps — REQUIRED for biscayne. Default agave behaviour is
+  # `--accounts-index-limit unlimited` (validator/src/commands/run/args.rs:1064)
+  # which maps to IndexLimit::InMemOnly (accounts-db/src/accounts_index.rs:239)
+  # and keeps the entire accounts index in heap with no eviction path
+  # (bucket_map_holder.rs:107-118). On mainnet this reaches ~1.12B entries /
+  # ~120 GiB after snapshot load and grows from there until the 921.6 GB
+  # pod cgroup OOM-kills the validator (~46 min cycle observed 2026-04-30).
+  # The 200GB threshold spills cold entries to the disk-backed bucket map
+  # at ledger_path.join("accounts_index") on the ZFS dataset (not tmpfs).
+  # DO NOT REMOVE — see infra/biscayne/CLAUDE.md "Memory configuration"
+  # and the deletion of biscayne-update-agave-env.yml (laconic-tech-ops
+  # commit b10cd20) for the drift pattern this guards against.
+  EXTRA_ARGS: --accounts-index-limit 200GB --accounts-db-cache-limit-mb 16384
