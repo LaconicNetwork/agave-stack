@@ -52,7 +52,7 @@ services:
           memory: 256000M
         limits:
           cpus: '32.0'
-          memory: 921600M
+          memory: 1024000M
     volumes:
       - validator-config:/data/config
       - validator-ledger:/data/ledger
