@@ -492,6 +492,37 @@ def build_rpc_args() -> list[str]:
     return args
 
 
+def build_staging_args() -> list[str]:
+    """Build agave-validator args for staging mode — common args only.
+
+    Staging is the deliberately-minimal mode: everything beyond what
+    `build_common_args()` provides for connecting to a cluster and
+    locating storage goes through `EXTRA_ARGS`. No mode-specific flags
+    are baked in.
+
+    Why: rpc/validator modes hardcode bundles of flags that we can't
+    selectively disable at runtime, which made bisecting the
+    OOM-driver flag combinations impossible without rebuilding the
+    image. Staging removes the bundle entirely. Operators set exactly
+    the flags they want via spec.yml's EXTRA_ARGS, restart the pod,
+    and observe.
+
+    Typical biscayne staging EXTRA_ARGS (set in spec.yml config:):
+        --no-voting
+        --log /data/log/validator.log
+        --enable-accounts-disk-index
+        --accounts-db-cache-limit-mb 16384
+        --private-rpc --allow-private-addr --only-known-rpc
+
+    Re-enable individual rpc-mode flags one at a time to bisect:
+        --full-rpc-api                          (scan_root pins)
+        --enable-rpc-transaction-history        (RocksDB tx-status)
+        --rpc-pubsub-enable-block-subscription  (in-memory block subs)
+        --enable-extended-tx-metadata-storage   (RocksDB inner-ix)
+    """
+    return build_common_args()
+
+
 def build_validator_args() -> list[str]:
     """Build agave-validator args for voting validator mode."""
     vote_keypair = env("VOTE_ACCOUNT_KEYPAIR", "/data/config/vote-account-keypair.json")
@@ -681,13 +712,17 @@ def cmd_serve() -> None:
     if mode == "test":
         os.execvp("start-test.sh", ["start-test.sh"])
 
-    if mode not in ("rpc", "validator"):
-        log.error("Unknown AGAVE_MODE: %s (valid: test, rpc, validator)", mode)
+    if mode not in ("rpc", "staging", "validator"):
+        log.error(
+            "Unknown AGAVE_MODE: %s (valid: test, rpc, staging, validator)",
+            mode,
+        )
         sys.exit(1)
 
-    # One-time setup
+    # One-time setup. staging shares rpc's persistent-logging requirement;
+    # validator-mode logs to stdout (--log -) instead.
     dirs = [CONFIG_DIR, LEDGER_DIR, ACCOUNTS_DIR, SNAPSHOTS_DIR]
-    if mode == "rpc":
+    if mode in ("rpc", "staging"):
         dirs.append(LOG_DIR)
     ensure_dirs(*dirs)
 
@@ -704,12 +739,16 @@ def cmd_serve() -> None:
         if ip_echo_main() != 0:
             sys.exit(1)
 
-    if mode == "rpc":
+    # staging mode uses the same auto-generated identity as rpc mode —
+    # neither needs an operator-supplied vote keypair.
+    if mode in ("rpc", "staging"):
         ensure_identity_rpc()
     print_identity()
 
     if mode == "rpc":
         args = build_rpc_args()
+    elif mode == "staging":
+        args = build_staging_args()
     else:
         args = build_validator_args()
     args = append_extra_args(args)
