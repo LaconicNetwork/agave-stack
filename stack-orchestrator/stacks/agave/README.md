@@ -11,16 +11,19 @@ Unified Agave/Jito Solana stack supporting three modes:
 ## Build
 
 ```bash
-# Vanilla Agave v3.1.9
+# Vanilla Agave, the Dockerfile default (v3.1.10)
 laconic-so --stack agave build-containers
+
+# Another tag: laconic-so does not pass shell env vars to build.sh.
+laconic-so --stack agave build-containers --include laconicnetwork/agave \
+  --extra-build-args "--build-arg AGAVE_VERSION=v4.3.0"
 
 # Jito v3.1.8
-AGAVE_REPO=https://github.com/jito-foundation/jito-solana.git \
-AGAVE_VERSION=v3.1.8-jito \
-laconic-so --stack agave build-containers
+laconic-so --stack agave build-containers --include laconicnetwork/agave \
+  --extra-build-args "--build-arg AGAVE_REPO=https://github.com/jito-foundation/jito-solana.git --build-arg AGAVE_VERSION=v3.1.8-jito"
 ```
 
-Build compiles from source (~30-60 min on first build).
+Build compiles from source (~20-60 min on first build).
 
 ## Deploy
 
@@ -146,9 +149,8 @@ Mainnet voting validator with Jito MEV and DoubleZero.
 
 ```bash
 # Build Jito image
-AGAVE_REPO=https://github.com/jito-foundation/jito-solana.git \
-AGAVE_VERSION=v3.1.8-jito \
-laconic-so --stack agave build-containers
+laconic-so --stack agave build-containers --include laconicnetwork/agave \
+  --extra-build-args "--build-arg AGAVE_REPO=https://github.com/jito-foundation/jito-solana.git --build-arg AGAVE_VERSION=v3.1.8-jito"
 
 # Create deployment from biscayne spec
 laconic-so --stack agave deploy create \

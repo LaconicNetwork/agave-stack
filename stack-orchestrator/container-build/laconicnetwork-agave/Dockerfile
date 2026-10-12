@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libudev-dev \
     libclang-dev \
     protobuf-compiler \
+    jq \
     ca-certificates \
     git \
     cmake \

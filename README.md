@@ -55,16 +55,20 @@ agave-stack/
 ## Building
 
 ```bash
-# Vanilla Agave v3.1.9
+# Vanilla Agave, the Dockerfile default (v3.1.10)
 laconic-so --stack agave build-containers
+
+# Another tag. laconic-so does not pass shell env vars to build.sh, so set the
+# version with --extra-build-args (it overrides build.sh's own --build-arg).
+laconic-so --stack agave build-containers --include laconicnetwork/agave \
+  --extra-build-args "--build-arg AGAVE_VERSION=v4.3.0"
 
 # Jito v3.1.8 (required for MEV)
-AGAVE_REPO=https://github.com/jito-foundation/jito-solana.git \
-AGAVE_VERSION=v3.1.8-jito \
-laconic-so --stack agave build-containers
+laconic-so --stack agave build-containers --include laconicnetwork/agave \
+  --extra-build-args "--build-arg AGAVE_REPO=https://github.com/jito-foundation/jito-solana.git --build-arg AGAVE_VERSION=v3.1.8-jito"
 ```
 
-Build compiles from source (~30-60 min on first build). This produces both the `laconicnetwork/agave:local` and `laconicnetwork/doublezero:local` images.
+Build compiles from source (~20-60 min). This produces the `laconicnetwork/agave:local` image (and `laconicnetwork/doublezero:local` without `--include`). Agave 4.x needs `jq` in the builder stage: `scripts/cargo-install-all.sh` checks the dev-tools feature graph through `jq` and aborts with "dcou feature activation is incorrectly deactivated!" when `jq` is missing.
 
 ## Deploying
 
@@ -244,9 +248,8 @@ The `deployment/` directory contains a reference deployment for biscayne.vaasl.i
 
 ```bash
 # Build Jito image
-AGAVE_REPO=https://github.com/jito-foundation/jito-solana.git \
-AGAVE_VERSION=v3.1.8-jito \
-laconic-so --stack agave build-containers
+laconic-so --stack agave build-containers --include laconicnetwork/agave \
+  --extra-build-args "--build-arg AGAVE_REPO=https://github.com/jito-foundation/jito-solana.git --build-arg AGAVE_VERSION=v3.1.8-jito"
 
 # Create deployment
 laconic-so --stack agave deploy create \
